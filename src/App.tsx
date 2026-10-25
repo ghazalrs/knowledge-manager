@@ -3,10 +3,40 @@ import { PanelLeft, X } from 'lucide-react'
 import { Dialog } from 'radix-ui'
 import { Sidebar } from '@/components/layout/sidebar'
 import { Button } from '@/components/ui/button'
+import type { Note } from '@/types/note'
 
 function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [mobileOpen, setMobileOpen] = useState(false)
+
+  const [notes, setNotes] = useState<Note[]>([])
+  const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null)
+  const selectedNote = notes.find((note) => note.id === selectedNoteId)
+
+  function createNote() {
+    const note: Note = { id: crypto.randomUUID(), title: 'Untitled' }
+    setNotes((currentNotes) => [note, ...currentNotes])
+    setSelectedNoteId(note.id)
+    setMobileOpen(false)
+  }
+
+  function selectNote(id: string) {
+    setSelectedNoteId(id)
+    setMobileOpen(false)
+  }
+
+  function goHome() {
+    setSelectedNoteId(null)
+    setMobileOpen(false)
+  }
+
+  const sidebarProps = {
+    notes,
+    selectedNoteId,
+    onHome: goHome,
+    onCreateNote: createNote,
+    onSelectNote: selectNote,
+  }
 
   return (
     <div className="flex min-h-svh bg-background text-foreground">
@@ -18,7 +48,7 @@ function App() {
               <PanelLeft aria-hidden="true" />
             </Button>
           </div>
-          <Sidebar />
+          <Sidebar {...sidebarProps} />
         </aside>
       )}
       <div className="flex min-w-0 flex-1 flex-col">
@@ -39,7 +69,7 @@ function App() {
                   </Dialog.Close>
                 </div>
                 <Dialog.Description className="sr-only">Navigate your workspace and browse notes.</Dialog.Description>
-                <Sidebar onHome={() => setMobileOpen(false)} />
+                <Sidebar {...sidebarProps} />
               </Dialog.Content>
             </Dialog.Portal>
           </Dialog.Root>
@@ -48,9 +78,15 @@ function App() {
               <PanelLeft aria-hidden="true" />
             </Button>
           )}
-          <span className="text-sm text-muted-foreground">Home</span>
+          <span className="truncate text-sm text-muted-foreground">{selectedNote?.title ?? 'Home'}</span>
         </header>
-        <main className="flex flex-1 items-center justify-center px-6 py-16">
+        <main className={selectedNote ? 'flex-1 px-6 py-12' : 'flex flex-1 items-center justify-center px-6 py-16'}>
+          {selectedNote ? (
+            <section className="mx-auto w-full max-w-3xl" aria-labelledby="note-title">
+              <h1 id="note-title" className="text-3xl font-semibold tracking-tight">{selectedNote.title}</h1>
+              <p className="mt-4 text-sm text-muted-foreground">Your note is ready. Editing is coming next.</p>
+            </section>
+          ) : (
           <section className="w-full max-w-lg text-center" aria-labelledby="welcome-title">
             <h1 id="welcome-title" className="text-3xl font-semibold tracking-tight sm:text-4xl">
               Welcome to Knowledge Manager
@@ -59,6 +95,7 @@ function App() {
               Your workspace for capturing ideas and organizing what you learn.
             </p>
           </section>
+          )}
         </main>
       </div>
     </div>
