@@ -5,42 +5,35 @@ import { Sidebar } from '@/components/layout/sidebar'
 import { NoteView } from '@/components/notes/note-view'
 import { Button } from '@/components/ui/button'
 import type { Note } from '@/types/note'
+import { useNotes } from '@/hooks/use-notes'
 
 function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [mobileOpen, setMobileOpen] = useState(false)
 
-  const [notes, setNotes] = useState<Note[]>([])
+  const { notes, loading, loadError, saveStatus, createNote: addNote, updateNote, deleteNote: removeNote, retryLoad, retrySave } = useNotes()
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null)
   const selectedNote = notes.find((note) => note.id === selectedNoteId)
 
   function createNote() {
-    const note: Note = {
-      id: crypto.randomUUID(),
-      title: 'Untitled',
-      content: { type: 'doc', content: [{ type: 'paragraph' }] },
-    }
-    setNotes((currentNotes) => [note, ...currentNotes])
-    setSelectedNoteId(note.id)
+    const id = addNote()
+    if (!id) return
+    setSelectedNoteId(id)
     setMobileOpen(false)
   }
 
   function renameNote(id: string, title: string) {
     const trimmedTitle = title.trim()
     if (!trimmedTitle) return
-    setNotes((currentNotes) => currentNotes.map((note) =>
-      note.id === id ? { ...note, title: trimmedTitle } : note,
-    ))
+    updateNote(id, { title: trimmedTitle })
   }
 
   function updateNoteContent(id: string, content: Note['content']) {
-    setNotes((currentNotes) => currentNotes.map((note) =>
-      note.id === id ? { ...note, content } : note,
-    ))
+    updateNote(id, { content })
   }
 
   function deleteNote(id: string) {
-    setNotes((currentNotes) => currentNotes.filter((note) => note.id !== id))
+    removeNote(id)
     setSelectedNoteId((currentId) => currentId === id ? null : currentId)
   }
 
@@ -56,6 +49,8 @@ function App() {
 
   const sidebarProps = {
     notes,
+    loading,
+    loadError,
     selectedNoteId,
     onHome: goHome,
     onCreateNote: createNote,
@@ -105,9 +100,26 @@ function App() {
             </Button>
           )}
           <span className="truncate text-sm text-muted-foreground">{selectedNote?.title ?? 'Home'}</span>
+          {!loading && !loadError && (
+            <span role="status" className="ml-auto shrink-0 text-xs text-muted-foreground">
+              {saveStatus === 'saving' ? 'Saving…' : saveStatus === 'saved' ? 'Saved locally' : 'Unsaved changes'}
+            </span>
+          )}
         </header>
+        {loadError && (
+          <div role="alert" className="flex flex-wrap items-center gap-3 px-6 py-3 text-sm text-destructive">
+            <p>Could not load your notes. Check that the local server is running, then retry.</p>
+            <Button variant="outline" onClick={retryLoad}>Retry</Button>
+          </div>
+        )}
+        {saveStatus === 'error' && (
+          <div role="alert" className="flex flex-wrap items-center gap-3 px-6 py-3 text-sm text-destructive">
+            <p>Changes could not be saved. Keep this page open and retry to save them.</p>
+            <Button variant="outline" onClick={retrySave}>Retry save</Button>
+          </div>
+        )}
         <main className={selectedNote ? 'flex-1 px-6 py-12' : 'flex flex-1 items-center justify-center px-6 py-16'}>
-          {selectedNote ? (
+          {loading ? <p role="status">Loading notes…</p> : selectedNote ? (
             <NoteView
               key={selectedNote.id}
               note={selectedNote}

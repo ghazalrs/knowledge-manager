@@ -6,6 +6,8 @@ import type { Note } from '@/types/note'
 
 type SidebarProps = {
   notes: Note[]
+  loading: boolean
+  loadError: boolean
   selectedNoteId: string | null
   onHome: () => void
   onCreateNote: () => void
@@ -14,7 +16,7 @@ type SidebarProps = {
   onDeleteNote: (id: string) => void
 }
 
-export function Sidebar({ notes, selectedNoteId, onHome, onCreateNote, onSelectNote, onRenameNote, onDeleteNote }: SidebarProps) {
+export function Sidebar({ notes, loading, loadError, selectedNoteId, onHome, onCreateNote, onSelectNote, onRenameNote, onDeleteNote }: SidebarProps) {
   const notesHeadingId = useId()
 
   return (
@@ -29,14 +31,16 @@ export function Sidebar({ notes, selectedNoteId, onHome, onCreateNote, onSelectN
           <Home aria-hidden="true" />
           Home
         </Button>
-        <Button variant="ghost" className="h-10 w-full justify-start gap-3" onClick={onCreateNote}>
+        <Button variant="ghost" className="h-10 w-full justify-start gap-3" onClick={onCreateNote} disabled={loading || loadError}>
           <Plus aria-hidden="true" />
           New note
         </Button>
       </div>
       <section aria-labelledby={notesHeadingId}>
         <h2 id={notesHeadingId} className="px-3 text-xs font-semibold text-muted-foreground">Notes</h2>
-        {notes.length === 0 ? (
+        {loading || loadError ? (
+          <p className="mt-3 px-3 text-sm text-muted-foreground">{loading ? 'Loading notes…' : 'Notes unavailable.'}</p>
+        ) : notes.length === 0 ? (
           <p className="mt-3 px-3 text-sm leading-relaxed text-muted-foreground">
             No notes yet. Create a note to get started.
           </p>

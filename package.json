@@ -3,11 +3,15 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
   "scripts": {
-    "dev": "vite",
+    "test": "node --experimental-strip-types --test tests/*.test.ts",
+    "dev": "node --experimental-strip-types server/index.ts",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "node --experimental-strip-types server/index.ts --production"
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.3.0",
