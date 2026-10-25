@@ -15,7 +15,7 @@ export function NoteEditor({ content, onChange }: NoteEditorProps) {
     content,
     editorProps: {
       attributes: {
-        class: 'note-editor min-h-64 p-4 leading-relaxed outline-none',
+        class: 'note-editor min-h-64 py-3 leading-7 outline-none',
         role: 'textbox',
         'aria-label': 'Note content',
         'aria-multiline': 'true',
@@ -46,8 +46,8 @@ export function NoteEditor({ content, onChange }: NoteEditorProps) {
   ]
 
   return (
-    <div className="mt-6">
-      <div role="group" aria-label="Text formatting" className="mb-2 flex flex-wrap gap-1 pb-2">
+    <div className="mt-5">
+      <div role="group" aria-label="Text formatting" className="mb-3 inline-flex max-w-full flex-wrap gap-1 rounded-xl bg-muted/55 p-1 text-muted-foreground">
         {actions.map(({ label, icon: Icon, active, run }) => (
           <Button
             key={label}

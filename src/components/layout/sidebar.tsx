@@ -33,28 +33,28 @@ export function Sidebar({ notes, folders, loading, loadError, selectedNoteId, on
   const { isOver, dropProps } = useNoteDrop(null, draggedNote, onMoveNote, () => setDraggedNoteId(null))
 
   return (
-    <nav aria-label="Main navigation" className="flex flex-1 flex-col gap-6 overflow-y-auto p-3">
+    <nav aria-label="Main navigation" className="flex flex-1 flex-col gap-7 overflow-y-auto px-3 pb-5 pt-2 [&_svg]:text-muted-foreground">
       <div className="space-y-1">
         <Button
           variant={selectedNoteId === null ? 'secondary' : 'ghost'}
-          className="h-10 w-full justify-start gap-3"
+          className="h-10 w-full justify-start gap-3 rounded-xl font-normal"
           aria-current={selectedNoteId === null ? 'page' : undefined}
           onClick={onHome}
         >
           <Home aria-hidden="true" />
           Home
         </Button>
-        <Button variant="ghost" className="h-10 w-full justify-start gap-3" onClick={() => onCreateNote()} disabled={loading || loadError}>
+        <Button variant="ghost" className="h-10 w-full justify-start gap-3 rounded-xl font-normal" onClick={() => onCreateNote()} disabled={loading || loadError}>
           <Plus aria-hidden="true" />
           New note
         </Button>
-        <Button variant="ghost" className="h-10 w-full justify-start gap-3" onClick={onCreateFolder} disabled={loading || loadError}>
+        <Button variant="ghost" className="h-10 w-full justify-start gap-3 rounded-xl font-normal" onClick={onCreateFolder} disabled={loading || loadError}>
           <FolderPlus aria-hidden="true" />
           New folder
         </Button>
       </div>
       <section aria-labelledby={foldersHeadingId}>
-        <h2 id={foldersHeadingId} className="px-3 text-xs font-semibold text-muted-foreground">Folders</h2>
+        <h2 id={foldersHeadingId} className="px-3 text-xs font-medium text-muted-foreground">Folders</h2>
         {loading || loadError ? (
           <p className="mt-3 px-3 text-sm text-muted-foreground">{loading ? 'Loading folders…' : 'Folders unavailable.'}</p>
         ) : folders.length === 0 ? (
@@ -74,7 +74,7 @@ export function Sidebar({ notes, folders, loading, loadError, selectedNoteId, on
       </section>
       <section aria-labelledby={notesHeadingId} {...dropProps}
         className={`min-h-20 rounded-lg ${isOver ? 'bg-accent ring-2 ring-ring' : ''}`}>
-        <h2 id={notesHeadingId} className="px-3 text-xs font-semibold text-muted-foreground">Notes</h2>
+        <h2 id={notesHeadingId} className="px-3 text-xs font-medium text-muted-foreground">Notes</h2>
         {loading || loadError ? (
           <p className="mt-3 px-3 text-sm text-muted-foreground">{loading ? 'Loading notes…' : 'Notes unavailable.'}</p>
         ) : topLevelNotes.length === 0 ? (

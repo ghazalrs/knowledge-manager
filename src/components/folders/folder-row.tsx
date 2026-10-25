@@ -69,7 +69,7 @@ export function FolderRow({ folder, notes, selectedNoteId, onCreateNote, onSelec
           />
         </form>
       ) : (
-        <Button variant="ghost" className="h-10 min-w-0 flex-1 justify-start gap-2"
+        <Button variant="ghost" className="h-9 min-w-0 flex-1 justify-start gap-2 rounded-xl font-normal"
           aria-expanded={expanded} aria-controls={contentsId} onClick={() => setExpanded((value) => !value)}>
           {expanded ? <ChevronDown aria-hidden="true" /> : <ChevronRight aria-hidden="true" />}
           <FolderIcon aria-hidden="true" className="size-4 shrink-0" />
@@ -78,7 +78,7 @@ export function FolderRow({ folder, notes, selectedNoteId, onCreateNote, onSelec
       )}
       <DropdownMenu.Root>
         <DropdownMenu.Trigger asChild>
-          <Button ref={triggerRef} variant="ghost" size="icon" className="mr-1" aria-label={`Folder options for ${folder.name}`}>
+          <Button ref={triggerRef} variant="ghost" size="icon" className="mr-1 text-muted-foreground" aria-label={`Folder options for ${folder.name}`}>
             <MoreHorizontal aria-hidden="true" />
           </Button>
         </DropdownMenu.Trigger>

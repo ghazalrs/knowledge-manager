@@ -3,6 +3,7 @@ import { PanelLeft, X } from 'lucide-react'
 import { Dialog } from 'radix-ui'
 import { Sidebar } from '@/components/layout/sidebar'
 import { NoteView } from '@/components/notes/note-view'
+import { WelcomeView } from '@/components/home/welcome-view'
 import { Button } from '@/components/ui/button'
 import type { Note } from '@/types/note'
 import { useWorkspace } from '@/hooks/use-workspace'
@@ -76,9 +77,9 @@ function App() {
   return (
     <div className="flex min-h-svh bg-background text-foreground">
       {sidebarOpen && (
-        <aside id="desktop-sidebar" aria-label="Sidebar" className="sticky top-0 hidden h-svh w-64 shrink-0 flex-col border-r bg-sidebar md:flex">
+        <aside id="desktop-sidebar" aria-label="Sidebar" className="sticky top-0 hidden h-svh w-64 shrink-0 flex-col border-r border-sidebar-border/60 bg-sidebar md:flex">
           <div className="flex h-16 shrink-0 items-center justify-between gap-2 px-4">
-            <span className="text-sm font-semibold tracking-tight">Knowledge Manager</span>
+            <span className="text-sm font-medium tracking-tight text-foreground/80">Knowledge Manager</span>
             <Button variant="ghost" size="icon" aria-label="Collapse sidebar" aria-expanded={true} aria-controls="desktop-sidebar" onClick={() => setSidebarOpen(false)}>
               <PanelLeft aria-hidden="true" />
             </Button>
@@ -98,7 +99,7 @@ function App() {
               <Dialog.Overlay className="fixed inset-0 z-40 bg-black/40 md:hidden" />
               <Dialog.Content className="fixed inset-y-0 left-0 z-50 flex w-72 max-w-[85vw] flex-col border-r bg-sidebar outline-none md:hidden">
                 <div className="flex h-16 shrink-0 items-center justify-between gap-2 px-4">
-                  <Dialog.Title className="text-sm font-semibold tracking-tight">Knowledge Manager</Dialog.Title>
+                  <Dialog.Title className="text-sm font-medium tracking-tight text-foreground/80">Knowledge Manager</Dialog.Title>
                   <Dialog.Close asChild>
                     <Button variant="ghost" size="icon" aria-label="Close sidebar"><X aria-hidden="true" /></Button>
                   </Dialog.Close>
@@ -131,23 +132,19 @@ function App() {
             <Button variant="outline" onClick={retrySave}>Retry save</Button>
           </div>
         )}
-        <main className={selectedNote ? 'flex-1 px-6 py-12' : 'flex flex-1 items-center justify-center px-6 py-16'}>
-          {loading ? <p role="status">Loading workspace…</p> : selectedNote ? (
+        <main className={selectedNote ? 'flex-1 px-6 py-8 sm:px-8 sm:py-12' : 'flex-1 px-5 pb-12 pt-4 sm:px-8 sm:pt-6 lg:px-12'}>
+          {loading ? <p role="status">Loading workspace…</p> : loadError ? (
+            <p className="text-sm text-muted-foreground">Your folders and notes will appear here once the workspace loads.</p>
+          ) : selectedNote ? (
             <NoteView
               key={selectedNote.id}
               note={selectedNote}
+              folderName={folders.find((folder) => folder.id === selectedNote.folderId)?.name}
               onContentChange={updateNoteContent}
               onRename={renameNote}
             />
           ) : (
-          <section className="w-full max-w-lg text-center" aria-labelledby="welcome-title">
-            <h1 id="welcome-title" className="text-3xl font-semibold tracking-tight sm:text-4xl">
-              Welcome to Knowledge Manager
-            </h1>
-            <p className="mt-4 text-base leading-relaxed text-muted-foreground">
-              Your workspace for capturing ideas and organizing what you learn.
-            </p>
-          </section>
+            <WelcomeView folders={folders} notes={notes} onOpenNote={selectNote} />
           )}
         </main>
       </div>

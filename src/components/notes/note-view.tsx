@@ -4,11 +4,12 @@ import { NoteEditor } from '@/components/notes/note-editor'
 
 type NoteViewProps = {
   note: Note
+  folderName?: string
   onContentChange: (id: string, content: Note['content']) => void
   onRename: (id: string, title: string) => void
 }
 
-export function NoteView({ note, onContentChange, onRename }: NoteViewProps) {
+export function NoteView({ note, folderName, onContentChange, onRename }: NoteViewProps) {
   const [renaming, setRenaming] = useState(false)
   const [draftTitle, setDraftTitle] = useState(note.title)
   const titleButton = useRef<HTMLButtonElement>(null)
@@ -37,7 +38,10 @@ export function NoteView({ note, onContentChange, onRename }: NoteViewProps) {
 
   return (
     <section className="mx-auto w-full max-w-3xl" aria-labelledby="note-title">
-      <h1 id="note-title" className="break-words text-3xl font-semibold tracking-tight">
+      {note.folderId !== null && folderName && (
+        <p className="mb-3 break-words text-sm text-muted-foreground">{folderName}</p>
+      )}
+      <h1 id="note-title" className="break-words text-2xl font-medium tracking-tight sm:text-3xl">
         {renaming ? (
           <input
             autoFocus

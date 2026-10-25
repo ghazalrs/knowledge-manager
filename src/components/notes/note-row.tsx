@@ -26,7 +26,7 @@ export function NoteRow({ note, selected, onSelect, onRename, onDelete, onDragNo
   }
 
   return (
-    <li className={`flex min-w-0 items-center rounded-lg ${selected ? 'bg-secondary' : ''}`}>
+    <li className={`flex min-w-0 items-center rounded-xl ${selected ? 'bg-secondary' : ''}`}>
       {renaming ? (
         <form
           className="min-w-0 flex-1 px-2"
@@ -59,7 +59,7 @@ export function NoteRow({ note, selected, onSelect, onRename, onDelete, onDragNo
       ) : (
         <Button
           variant="ghost"
-          className="h-10 min-w-0 flex-1 cursor-grab justify-start gap-3 active:cursor-grabbing"
+          className="h-9 min-w-0 flex-1 cursor-grab justify-start gap-3 rounded-xl font-normal active:cursor-grabbing"
           draggable
           onDragStart={(event) => {
             event.dataTransfer.effectAllowed = 'move'
@@ -76,7 +76,7 @@ export function NoteRow({ note, selected, onSelect, onRename, onDelete, onDragNo
       )}
       <DropdownMenu.Root>
         <DropdownMenu.Trigger asChild>
-          <Button ref={menuTriggerRef} variant="ghost" size="icon" className="mr-1" aria-label={`Options for ${note.title}`}>
+          <Button ref={menuTriggerRef} variant="ghost" size="icon" className="mr-1 text-muted-foreground" aria-label={`Options for ${note.title}`}>
             <MoreHorizontal aria-hidden="true" />
           </Button>
         </DropdownMenu.Trigger>
