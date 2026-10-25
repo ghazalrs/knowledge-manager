@@ -1,0 +1,48 @@
+# Knowledge Manager
+
+A local-first, AI-powered web application that transforms unstructured information into organized, searchable, and interconnected personal knowledge.
+
+## Features
+
+- **Note Management:** Create, edit, and organize notes into folders.
+- **AI Organization:** Clean, summarize, categorize, and integrate information into new or existing notes.
+- **AI Chat:** Ask questions and interact with stored knowledge.
+- **RAG:** Retrieve relevant information using keyword and semantic search.
+- **Knowledge Graph:** Visualize relationships between notes and concepts.
+- **Flashcards:** Generate study materials from saved notes.
+- **Local Storage:** Store personal knowledge locally without requiring an account.
+- **Bring Your Own API Key:** Connect supported AI providers using personal API keys.
+
+
+## Tech Stack
+
+- **Frontend:** React, TypeScript, Vite
+- **UI:** Tailwind CSS, shadcn/ui
+- **Editor:** Tiptap
+- **Database:** IndexedDB, Dexie.js
+- **Search:** Hybrid RAG (keyword and vector search)
+- **Knowledge Graph:** React Flow
+
+## Installation
+
+```bash
+git clone <repository-url>
+cd knowledge-organization-system
+npm install
+npm run dev
+```
+
+Open the local URL displayed in the terminal.
+
+## Usage
+
+1. Create notes and organize them into folders.
+2. Add information manually or through the AI chat.
+3. Use AI to clean, summarize, and organize information.
+4. Search and ask questions about stored knowledge.
+5. Explore connections through the knowledge graph.
+
+
+## License
+
+License to be determined.
