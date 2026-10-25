@@ -96,19 +96,30 @@ export function createNotesApi(store: NotesStore) {
         const body = await readBody(request)
         if (typeof body.id !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(body.id)
           || !validTitle(body.title) || !validContent(body.content)
+          || (body.folderId !== undefined && body.folderId !== null
+            && (typeof body.folderId !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(body.folderId)))
           || !Number.isSafeInteger(body.createdAt) || (body.createdAt as number) < 0) {
           throw new RequestError(400, 'Invalid note')
         }
-        store.createNote({ id: body.id, title: body.title, content: body.content, createdAt: body.createdAt as number })
+        const created = store.createNote({
+          id: body.id, title: body.title, content: body.content,
+          createdAt: body.createdAt as number, folderId: (body.folderId as string | null | undefined) ?? null,
+        })
+        if (!created) throw new RequestError(404, 'Folder no longer exists. Refresh to load the latest folders.')
         response.writeHead(204).end()
         return
       }
       if (noteRoute && request.method === 'PATCH') {
         const body = await readBody(request)
-        if (!Object.keys(body).length || Object.keys(body).some((key) => key !== 'title' && key !== 'content')
+        if (!Object.keys(body).length || Object.keys(body).some((key) => key !== 'title' && key !== 'content' && key !== 'folderId')
           || ('title' in body && !validTitle(body.title))
+          || ('folderId' in body && body.folderId !== null
+            && (typeof body.folderId !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(body.folderId)))
           || ('content' in body && !validContent(body.content))) {
           throw new RequestError(400, 'Invalid note changes')
+        }
+        if (typeof body.folderId === 'string' && !store.hasFolder(body.folderId)) {
+          throw new RequestError(404, 'Destination folder no longer exists')
         }
         if (!store.updateNote(noteRoute[1], body as NoteChanges)) throw new RequestError(404, 'Note no longer exists. Refresh to load the latest notes.')
         response.writeHead(204).end()

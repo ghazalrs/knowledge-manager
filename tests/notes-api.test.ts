@@ -17,7 +17,7 @@ test('independent HTTP clients share notes; invalid and unrelated requests canno
     if (!address || typeof address === 'string') throw new Error('No test server address')
     const base = `http://127.0.0.1:${address.port}`
     const note: Note = {
-      id: 'shared', title: 'From browser A', createdAt: 1,
+      id: 'shared', title: 'From browser A', createdAt: 1, folderId: null,
       content: { type: 'doc', content: [{ type: 'paragraph' }] },
     }
     const clientA = (path: string, method: string, body?: unknown, headers: Record<string, string> = {}) => fetch(`${base}${path}`, {
@@ -44,6 +44,23 @@ test('independent HTTP clients share notes; invalid and unrelated requests canno
     const readFolders = async () => (await fetch(`${base}/api/folders`)).json()
     assert.equal((await clientA('/api/folders', 'POST', folder)).status, 204)
     assert.deepEqual(await readFolders(), [folder])
+    assert.equal((await clientA('/api/notes/shared', 'PATCH', { folderId: folder.id })).status, 204)
+    assert.deepEqual((await clientB()).find((item) => item.id === note.id), { ...note, title: 'Renamed', folderId: folder.id })
+    const destination = { id: 'destination', name: 'Destination', createdAt: 2 }
+    await clientA('/api/folders', 'POST', destination)
+    assert.equal((await clientA('/api/notes/shared', 'PATCH', { folderId: destination.id })).status, 204)
+    assert.equal((await clientA('/api/notes/shared', 'PATCH', { folderId: 'missing' })).status, 404)
+    assert.equal((await clientA('/api/notes/shared', 'PATCH', { folderId: 42 })).status, 400)
+    assert.equal((await clientB()).find((item) => item.id === note.id)?.folderId, destination.id)
+    assert.equal((await clientA('/api/notes/shared', 'PATCH', { folderId: null })).status, 204)
+    await clientA('/api/folders/destination', 'DELETE')
+    assert.deepEqual((await clientB()).find((item) => item.id === note.id), { ...note, title: 'Renamed' })
+    const inside = { ...note, id: 'inside', folderId: folder.id, createdAt: 2 }
+    assert.equal((await clientA('/api/notes', 'POST', inside)).status, 204)
+    assert.deepEqual((await clientB()).find((item) => item.id === inside.id), inside)
+    assert.equal((await clientA('/api/notes/inside', 'PATCH', { title: 'Inside renamed' })).status, 204)
+    assert.equal((await clientA('/api/notes', 'POST', { ...inside, id: 'bad-folder', folderId: 123 })).status, 400)
+    assert.equal((await clientA('/api/notes', 'POST', { ...inside, id: 'missing', folderId: 'missing-folder' })).status, 404)
     assert.equal((await clientA('/api/folders/folder', 'PATCH', { name: '  Research  ' })).status, 204)
     assert.equal((await clientA('/api/folders', 'POST', folder)).status, 204)
     assert.deepEqual(await readFolders(), [{ ...folder, name: 'Research' }])
@@ -56,6 +73,8 @@ test('independent HTTP clients share notes; invalid and unrelated requests canno
     assert.equal((await clientA('/api/folders/folder', 'DELETE')).status, 204)
     assert.equal((await clientA('/api/folders/folder', 'PATCH', { name: 'Stale' })).status, 404)
     assert.deepEqual(await readFolders(), [])
+    assert.equal((await clientA('/api/notes', 'POST', { ...inside, id: 'stale-create' })).status, 404)
+    assert.equal((await clientA('/api/notes/inside', 'PATCH', { title: 'Stale edit' })).status, 404)
     assert.equal((await clientB()).length, 1)
     const malformed = await fetch(`${base}/api/notes`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{' })
     assert.equal(malformed.status, 400)

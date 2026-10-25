@@ -5,40 +5,22 @@ import { Sidebar } from '@/components/layout/sidebar'
 import { NoteView } from '@/components/notes/note-view'
 import { Button } from '@/components/ui/button'
 import type { Note } from '@/types/note'
-import { useNotes } from '@/hooks/use-notes'
-import { useFolders } from '@/hooks/use-folders'
+import { useWorkspace } from '@/hooks/use-workspace'
 
 function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [mobileOpen, setMobileOpen] = useState(false)
 
   const {
-    notes, loading: notesLoading, loadError: notesLoadError, saveStatus: notesSaveStatus,
-    createNote: addNote, updateNote, deleteNote: removeNote, retryLoad: retryNotesLoad, retrySave: retryNotesSave,
-  } = useNotes()
-  const {
-    folders, loading: foldersLoading, loadError: foldersLoadError, saveStatus: foldersSaveStatus,
-    createFolder, renameFolder, deleteFolder, retryLoad: retryFoldersLoad, retrySave: retryFoldersSave,
-  } = useFolders()
-  const loading = notesLoading || foldersLoading
-  const loadError = notesLoadError || foldersLoadError
-  const saveStatus = notesSaveStatus === 'error' || foldersSaveStatus === 'error' ? 'error'
-    : notesSaveStatus === 'saving' || foldersSaveStatus === 'saving' ? 'saving' : 'saved'
-
-  function retryLoad() {
-    if (notesLoadError) retryNotesLoad()
-    if (foldersLoadError) retryFoldersLoad()
-  }
-
-  function retrySave() {
-    retryNotesSave()
-    retryFoldersSave()
-  }
+    notes, folders, loading, loadError, saveStatus,
+    createNote: addNote, updateNote, deleteNote: removeNote, retryLoad, retrySave,
+    createFolder, renameFolder, deleteFolder: removeFolder, moveNote,
+  } = useWorkspace()
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null)
   const selectedNote = notes.find((note) => note.id === selectedNoteId)
 
-  function createNote() {
-    const id = addNote()
+  function createNote(folderId: string | null = null) {
+    const id = addNote(folderId)
     if (!id) return
     setSelectedNoteId(id)
     setMobileOpen(false)
@@ -64,6 +46,11 @@ function App() {
     setMobileOpen(false)
   }
 
+  function deleteFolder(id: string) {
+    removeFolder(id)
+    if (selectedNote?.folderId === id) setSelectedNoteId(null)
+  }
+
   function goHome() {
     setSelectedNoteId(null)
     setMobileOpen(false)
@@ -80,6 +67,7 @@ function App() {
     onSelectNote: selectNote,
     onRenameNote: renameNote,
     onDeleteNote: deleteNote,
+    onMoveNote: moveNote,
     onCreateFolder: createFolder,
     onRenameFolder: renameFolder,
     onDeleteFolder: deleteFolder,
@@ -99,7 +87,7 @@ function App() {
         </aside>
       )}
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-16 shrink-0 items-center gap-3 border-b px-4 sm:px-6">
+        <header className="flex h-16 shrink-0 items-center gap-3 px-4 sm:px-6">
           <Dialog.Root open={mobileOpen} onOpenChange={setMobileOpen}>
             <Dialog.Trigger asChild>
               <Button variant="ghost" size="icon" className="md:hidden" aria-label="Open sidebar">
@@ -125,12 +113,11 @@ function App() {
               <PanelLeft aria-hidden="true" />
             </Button>
           )}
-          <span className="truncate text-sm text-muted-foreground">{selectedNote?.title ?? 'Home'}</span>
-          {!loading && !loadError && (
+          {/* {!loading && !loadError && (
             <span role="status" className="ml-auto shrink-0 text-xs text-muted-foreground">
               {saveStatus === 'saving' ? 'Saving…' : saveStatus === 'saved' ? 'Saved locally' : 'Unsaved changes'}
             </span>
-          )}
+          )} */}
         </header>
         {loadError && (
           <div role="alert" className="flex flex-wrap items-center gap-3 px-6 py-3 text-sm text-destructive">
@@ -150,6 +137,7 @@ function App() {
               key={selectedNote.id}
               note={selectedNote}
               onContentChange={updateNoteContent}
+              onRename={renameNote}
             />
           ) : (
           <section className="w-full max-w-lg text-center" aria-labelledby="welcome-title">

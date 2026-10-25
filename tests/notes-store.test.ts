@@ -11,7 +11,7 @@ test('SQLite preserves formatting, order, renames and deletions after reopening'
   const path = join(directory, 'notes.sqlite')
   let store = new NotesStore(path)
   const first: Note = {
-    id: 'first', title: 'First', createdAt: 1,
+    id: 'first', title: 'First', createdAt: 1, folderId: null,
     content: { type: 'doc', content: [{ type: 'paragraph' }] },
   }
   const second: Note = { ...first, id: 'second', title: 'Second', createdAt: 2 }

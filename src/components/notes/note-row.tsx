@@ -3,6 +3,7 @@ import { FileText, MoreHorizontal } from 'lucide-react'
 import { DropdownMenu } from 'radix-ui'
 import { Button } from '@/components/ui/button'
 import type { Note } from '@/types/note'
+import { NOTE_DRAG_TYPE } from '@/hooks/use-note-drop'
 
 type NoteRowProps = {
   note: Note
@@ -10,9 +11,10 @@ type NoteRowProps = {
   onSelect: (id: string) => void
   onRename: (id: string, title: string) => void
   onDelete: (id: string) => void
+  onDragNote: (id: string | null) => void
 }
 
-export function NoteRow({ note, selected, onSelect, onRename, onDelete }: NoteRowProps) {
+export function NoteRow({ note, selected, onSelect, onRename, onDelete, onDragNote }: NoteRowProps) {
   const [renaming, setRenaming] = useState(false)
   const [draftTitle, setDraftTitle] = useState(note.title)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -57,7 +59,14 @@ export function NoteRow({ note, selected, onSelect, onRename, onDelete }: NoteRo
       ) : (
         <Button
           variant="ghost"
-          className="h-10 min-w-0 flex-1 justify-start gap-3"
+          className="h-10 min-w-0 flex-1 cursor-grab justify-start gap-3 active:cursor-grabbing"
+          draggable
+          onDragStart={(event) => {
+            event.dataTransfer.effectAllowed = 'move'
+            event.dataTransfer.setData(NOTE_DRAG_TYPE, note.id)
+            onDragNote(note.id)
+          }}
+          onDragEnd={() => onDragNote(null)}
           aria-current={selected ? 'page' : undefined}
           onClick={() => onSelect(note.id)}
         >

@@ -32,7 +32,7 @@ test('folders persist across reopening and upgrading a notes-only database prese
     store.close()
     store = new NotesStore(path)
     assert.deepEqual(store.loadFolders(), [second])
-    assert.deepEqual(store.loadNotes(), [{ id: 'existing', title: 'Existing note', content, createdAt: 1 }])
+    assert.deepEqual(store.loadNotes(), [{ id: 'existing', title: 'Existing note', content, createdAt: 1, folderId: null }])
     store.deleteFolder(second.id)
     assert.deepEqual(store.loadFolders(), [])
   } finally {
