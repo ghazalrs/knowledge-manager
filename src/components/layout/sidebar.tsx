@@ -1,6 +1,7 @@
 import { useId } from 'react'
-import { FileText, Home, Plus } from 'lucide-react'
+import { Home, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { NoteRow } from '@/components/notes/note-row'
 import type { Note } from '@/types/note'
 
 type SidebarProps = {
@@ -9,9 +10,11 @@ type SidebarProps = {
   onHome: () => void
   onCreateNote: () => void
   onSelectNote: (id: string) => void
+  onRenameNote: (id: string, title: string) => void
+  onDeleteNote: (id: string) => void
 }
 
-export function Sidebar({ notes, selectedNoteId, onHome, onCreateNote, onSelectNote }: SidebarProps) {
+export function Sidebar({ notes, selectedNoteId, onHome, onCreateNote, onSelectNote, onRenameNote, onDeleteNote }: SidebarProps) {
   const notesHeadingId = useId()
 
   return (
@@ -40,17 +43,14 @@ export function Sidebar({ notes, selectedNoteId, onHome, onCreateNote, onSelectN
         ) : (
           <ul className="mt-2 space-y-1">
             {notes.map((note) => (
-              <li key={note.id}>
-                <Button
-                  variant={selectedNoteId === note.id ? 'secondary' : 'ghost'}
-                  className="h-10 w-full justify-start gap-3"
-                  aria-current={selectedNoteId === note.id ? 'page' : undefined}
-                  onClick={() => onSelectNote(note.id)}
-                >
-                  <FileText aria-hidden="true" />
-                  <span className="truncate">{note.title}</span>
-                </Button>
-              </li>
+              <NoteRow
+                key={note.id}
+                note={note}
+                selected={selectedNoteId === note.id}
+                onSelect={onSelectNote}
+                onRename={onRenameNote}
+                onDelete={onDeleteNote}
+              />
             ))}
           </ul>
         )}

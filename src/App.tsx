@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { PanelLeft, X } from 'lucide-react'
 import { Dialog } from 'radix-ui'
 import { Sidebar } from '@/components/layout/sidebar'
+import { NoteView } from '@/components/notes/note-view'
 import { Button } from '@/components/ui/button'
 import type { Note } from '@/types/note'
 
@@ -20,6 +21,19 @@ function App() {
     setMobileOpen(false)
   }
 
+  function renameNote(id: string, title: string) {
+    const trimmedTitle = title.trim()
+    if (!trimmedTitle) return
+    setNotes((currentNotes) => currentNotes.map((note) =>
+      note.id === id ? { ...note, title: trimmedTitle } : note,
+    ))
+  }
+
+  function deleteNote(id: string) {
+    setNotes((currentNotes) => currentNotes.filter((note) => note.id !== id))
+    setSelectedNoteId((currentId) => currentId === id ? null : currentId)
+  }
+
   function selectNote(id: string) {
     setSelectedNoteId(id)
     setMobileOpen(false)
@@ -36,6 +50,8 @@ function App() {
     onHome: goHome,
     onCreateNote: createNote,
     onSelectNote: selectNote,
+    onRenameNote: renameNote,
+    onDeleteNote: deleteNote,
   }
 
   return (
@@ -82,10 +98,10 @@ function App() {
         </header>
         <main className={selectedNote ? 'flex-1 px-6 py-12' : 'flex flex-1 items-center justify-center px-6 py-16'}>
           {selectedNote ? (
-            <section className="mx-auto w-full max-w-3xl" aria-labelledby="note-title">
-              <h1 id="note-title" className="text-3xl font-semibold tracking-tight">{selectedNote.title}</h1>
-              <p className="mt-4 text-sm text-muted-foreground">Your note is ready. Editing is coming next.</p>
-            </section>
+            <NoteView
+              key={selectedNote.id}
+              note={selectedNote}
+            />
           ) : (
           <section className="w-full max-w-lg text-center" aria-labelledby="welcome-title">
             <h1 id="welcome-title" className="text-3xl font-semibold tracking-tight sm:text-4xl">
