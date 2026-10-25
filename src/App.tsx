@@ -15,7 +15,11 @@ function App() {
   const selectedNote = notes.find((note) => note.id === selectedNoteId)
 
   function createNote() {
-    const note: Note = { id: crypto.randomUUID(), title: 'Untitled' }
+    const note: Note = {
+      id: crypto.randomUUID(),
+      title: 'Untitled',
+      content: { type: 'doc', content: [{ type: 'paragraph' }] },
+    }
     setNotes((currentNotes) => [note, ...currentNotes])
     setSelectedNoteId(note.id)
     setMobileOpen(false)
@@ -26,6 +30,12 @@ function App() {
     if (!trimmedTitle) return
     setNotes((currentNotes) => currentNotes.map((note) =>
       note.id === id ? { ...note, title: trimmedTitle } : note,
+    ))
+  }
+
+  function updateNoteContent(id: string, content: Note['content']) {
+    setNotes((currentNotes) => currentNotes.map((note) =>
+      note.id === id ? { ...note, content } : note,
     ))
   }
 
@@ -101,6 +111,7 @@ function App() {
             <NoteView
               key={selectedNote.id}
               note={selectedNote}
+              onContentChange={updateNoteContent}
             />
           ) : (
           <section className="w-full max-w-lg text-center" aria-labelledby="welcome-title">

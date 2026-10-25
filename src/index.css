@@ -5,6 +5,16 @@
 
 @custom-variant dark (&:is(.dark *));
 
+.note-editor > * + * { margin-top: 0.75rem; }
+.note-editor h2 { font-size: 1.5rem; font-weight: 600; }
+.note-editor ul { list-style-type: disc; padding-left: 1.5rem; }
+.note-editor ol { list-style-type: decimal; padding-left: 1.5rem; }
+.note-editor blockquote { border-left: 3px solid var(--border); padding-left: 1rem; }
+.note-editor pre { overflow-x: auto; border-radius: 0.5rem; background: var(--muted); padding: 1rem; }
+.note-editor code { border-radius: 0.25rem; background: var(--muted); padding: 0.125rem 0.25rem; }
+.note-editor hr { margin-block: 1rem; border-top: 1px solid var(--border); }
+.note-editor { overflow-wrap: anywhere; }
+
 @theme inline {
     --font-heading: var(--font-sans);
     --font-sans: 'Geist Variable', sans-serif;
