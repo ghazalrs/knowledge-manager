@@ -6,12 +6,34 @@ import { NoteView } from '@/components/notes/note-view'
 import { Button } from '@/components/ui/button'
 import type { Note } from '@/types/note'
 import { useNotes } from '@/hooks/use-notes'
+import { useFolders } from '@/hooks/use-folders'
 
 function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [mobileOpen, setMobileOpen] = useState(false)
 
-  const { notes, loading, loadError, saveStatus, createNote: addNote, updateNote, deleteNote: removeNote, retryLoad, retrySave } = useNotes()
+  const {
+    notes, loading: notesLoading, loadError: notesLoadError, saveStatus: notesSaveStatus,
+    createNote: addNote, updateNote, deleteNote: removeNote, retryLoad: retryNotesLoad, retrySave: retryNotesSave,
+  } = useNotes()
+  const {
+    folders, loading: foldersLoading, loadError: foldersLoadError, saveStatus: foldersSaveStatus,
+    createFolder, renameFolder, deleteFolder, retryLoad: retryFoldersLoad, retrySave: retryFoldersSave,
+  } = useFolders()
+  const loading = notesLoading || foldersLoading
+  const loadError = notesLoadError || foldersLoadError
+  const saveStatus = notesSaveStatus === 'error' || foldersSaveStatus === 'error' ? 'error'
+    : notesSaveStatus === 'saving' || foldersSaveStatus === 'saving' ? 'saving' : 'saved'
+
+  function retryLoad() {
+    if (notesLoadError) retryNotesLoad()
+    if (foldersLoadError) retryFoldersLoad()
+  }
+
+  function retrySave() {
+    retryNotesSave()
+    retryFoldersSave()
+  }
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null)
   const selectedNote = notes.find((note) => note.id === selectedNoteId)
 
@@ -49,6 +71,7 @@ function App() {
 
   const sidebarProps = {
     notes,
+    folders,
     loading,
     loadError,
     selectedNoteId,
@@ -57,6 +80,9 @@ function App() {
     onSelectNote: selectNote,
     onRenameNote: renameNote,
     onDeleteNote: deleteNote,
+    onCreateFolder: createFolder,
+    onRenameFolder: renameFolder,
+    onDeleteFolder: deleteFolder,
   }
 
   return (
@@ -108,7 +134,7 @@ function App() {
         </header>
         {loadError && (
           <div role="alert" className="flex flex-wrap items-center gap-3 px-6 py-3 text-sm text-destructive">
-            <p>Could not load your notes. Check that the local server is running, then retry.</p>
+            <p>Could not load your notes or folders. Check that the local server is running, then retry.</p>
             <Button variant="outline" onClick={retryLoad}>Retry</Button>
           </div>
         )}
@@ -119,7 +145,7 @@ function App() {
           </div>
         )}
         <main className={selectedNote ? 'flex-1 px-6 py-12' : 'flex flex-1 items-center justify-center px-6 py-16'}>
-          {loading ? <p role="status">Loading notes…</p> : selectedNote ? (
+          {loading ? <p role="status">Loading workspace…</p> : selectedNote ? (
             <NoteView
               key={selectedNote.id}
               note={selectedNote}

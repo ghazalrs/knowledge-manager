@@ -1,5 +1,6 @@
 import { DatabaseSync } from 'node:sqlite'
 import type { Note, NoteChanges } from '../src/types/note.ts'
+import type { Folder } from '../src/types/folder.ts'
 
 export class NotesStore {
   private db: DatabaseSync
@@ -14,6 +15,12 @@ export class NotesStore {
         createdAt INTEGER NOT NULL
       );
       CREATE INDEX IF NOT EXISTS notes_created_at ON notes(createdAt);
+      CREATE TABLE IF NOT EXISTS folders (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        createdAt INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS folders_created_at ON folders(createdAt);
     `)
   }
 
@@ -43,6 +50,25 @@ export class NotesStore {
 
   deleteNote(id: string) {
     this.db.prepare('DELETE FROM notes WHERE id = ?').run(id)
+  }
+
+  loadFolders(): Folder[] {
+    return this.db.prepare('SELECT * FROM folders ORDER BY createdAt DESC, id DESC').all().map((row) => ({
+      id: row.id as string, name: row.name as string, createdAt: row.createdAt as number,
+    }))
+  }
+
+  createFolder(folder: Folder) {
+    this.db.prepare('INSERT INTO folders (id, name, createdAt) VALUES (?, ?, ?) ON CONFLICT(id) DO NOTHING')
+      .run(folder.id, folder.name, folder.createdAt)
+  }
+
+  renameFolder(id: string, name: string) {
+    return this.db.prepare('UPDATE folders SET name = ? WHERE id = ?').run(name, id).changes > 0
+  }
+
+  deleteFolder(id: string) {
+    this.db.prepare('DELETE FROM folders WHERE id = ?').run(id)
   }
 
   close() {

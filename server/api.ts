@@ -60,6 +60,33 @@ export function createNotesApi(store: NotesStore) {
     }
     try {
       const pathname = new URL(request.url ?? '/', 'http://localhost').pathname
+      const folderRoute = /^\/api\/folders\/([a-zA-Z0-9_-]{1,128})$/.exec(pathname)
+      if (pathname === '/api/folders' && request.method === 'GET') {
+        json(response, 200, store.loadFolders())
+        return
+      }
+      if (pathname === '/api/folders' && request.method === 'POST') {
+        const body = await readBody(request)
+        if (typeof body.id !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(body.id)
+          || !validTitle(body.name) || !Number.isSafeInteger(body.createdAt) || (body.createdAt as number) < 0) {
+          throw new RequestError(400, 'Invalid folder')
+        }
+        store.createFolder({ id: body.id, name: body.name.trim(), createdAt: body.createdAt as number })
+        response.writeHead(204).end()
+        return
+      }
+      if (folderRoute && request.method === 'PATCH') {
+        const body = await readBody(request)
+        if (Object.keys(body).length !== 1 || !validTitle(body.name)) throw new RequestError(400, 'Invalid folder name')
+        if (!store.renameFolder(folderRoute[1], body.name.trim())) throw new RequestError(404, 'Folder no longer exists')
+        response.writeHead(204).end()
+        return
+      }
+      if (folderRoute && request.method === 'DELETE') {
+        store.deleteFolder(folderRoute[1])
+        response.writeHead(204).end()
+        return
+      }
       const noteRoute = /^\/api\/notes\/([a-zA-Z0-9_-]{1,128})$/.exec(pathname)
       if (pathname === '/api/notes' && request.method === 'GET') {
         json(response, 200, store.loadNotes())
