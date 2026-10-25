@@ -1,11 +1,12 @@
 import { useId, useState } from 'react'
-import { FolderPlus, Home, Plus } from 'lucide-react'
+import { FolderPlus, Home, MessageSquare, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { NoteRow } from '@/components/notes/note-row'
 import type { Note } from '@/types/note'
 import type { Folder } from '@/types/folder'
 import { FolderRow } from '@/components/folders/folder-row'
 import { useNoteDrop } from '@/hooks/use-note-drop'
+import type { WorkspaceView } from '@/types/chat'
 
 type SidebarProps = {
   notes: Note[]
@@ -13,6 +14,8 @@ type SidebarProps = {
   loading: boolean
   loadError: boolean
   selectedNoteId: string | null
+  activeView: WorkspaceView
+  onChat: () => void
   onHome: () => void
   onCreateNote: (folderId?: string | null) => void
   onSelectNote: (id: string) => void
@@ -24,7 +27,7 @@ type SidebarProps = {
   onDeleteFolder: (id: string) => void
 }
 
-export function Sidebar({ notes, folders, loading, loadError, selectedNoteId, onHome, onCreateNote, onSelectNote, onRenameNote, onDeleteNote, onMoveNote, onCreateFolder, onRenameFolder, onDeleteFolder }: SidebarProps) {
+export function Sidebar({ notes, folders, loading, loadError, selectedNoteId, activeView, onChat, onHome, onCreateNote, onSelectNote, onRenameNote, onDeleteNote, onMoveNote, onCreateFolder, onRenameFolder, onDeleteFolder }: SidebarProps) {
   const notesHeadingId = useId()
   const foldersHeadingId = useId()
   const topLevelNotes = notes.filter((note) => note.folderId === null)
@@ -36,13 +39,19 @@ export function Sidebar({ notes, folders, loading, loadError, selectedNoteId, on
     <nav aria-label="Main navigation" className="flex flex-1 flex-col gap-7 overflow-y-auto px-3 pb-5 pt-2 [&_svg]:text-muted-foreground">
       <div className="space-y-1">
         <Button
-          variant={selectedNoteId === null ? 'secondary' : 'ghost'}
+          variant={activeView === 'home' ? 'secondary' : 'ghost'}
           className="h-10 w-full justify-start gap-3 rounded-xl font-normal"
-          aria-current={selectedNoteId === null ? 'page' : undefined}
+          aria-current={activeView === 'home' ? 'page' : undefined}
           onClick={onHome}
         >
           <Home aria-hidden="true" />
           Home
+        </Button>
+        <Button variant={activeView === 'chat' ? 'secondary' : 'ghost'}
+          className="h-10 w-full justify-start gap-3 rounded-xl font-normal"
+          aria-current={activeView === 'chat' ? 'page' : undefined} onClick={onChat}>
+          <MessageSquare aria-hidden="true" />
+          Chat
         </Button>
         <Button variant="ghost" className="h-10 w-full justify-start gap-3 rounded-xl font-normal" onClick={() => onCreateNote()} disabled={loading || loadError}>
           <Plus aria-hidden="true" />

@@ -4,13 +4,19 @@ import { Dialog } from 'radix-ui'
 import { Sidebar } from '@/components/layout/sidebar'
 import { NoteView } from '@/components/notes/note-view'
 import { WelcomeView } from '@/components/home/welcome-view'
+import { ChatView } from '@/components/chat/chat-view'
 import { Button } from '@/components/ui/button'
 import type { Note } from '@/types/note'
+import type { ChatAttachment, ChatMessage, WorkspaceView } from '@/types/chat'
 import { useWorkspace } from '@/hooks/use-workspace'
 
 function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [activeView, setActiveView] = useState<WorkspaceView>('home')
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
+  const [chatDraft, setChatDraft] = useState('')
+  const [chatAttachments, setChatAttachments] = useState<ChatAttachment[]>([])
 
   const {
     notes, folders, loading, loadError, saveStatus,
@@ -24,6 +30,7 @@ function App() {
     const id = addNote(folderId)
     if (!id) return
     setSelectedNoteId(id)
+    setActiveView('note')
     setMobileOpen(false)
   }
 
@@ -39,22 +46,52 @@ function App() {
 
   function deleteNote(id: string) {
     removeNote(id)
+    if (selectedNoteId === id) setActiveView('home')
     setSelectedNoteId((currentId) => currentId === id ? null : currentId)
   }
 
   function selectNote(id: string) {
     setSelectedNoteId(id)
+    setActiveView('note')
     setMobileOpen(false)
   }
 
   function deleteFolder(id: string) {
     removeFolder(id)
-    if (selectedNote?.folderId === id) setSelectedNoteId(null)
+    if (selectedNote?.folderId === id) {
+      setSelectedNoteId(null)
+      setActiveView('home')
+    }
   }
 
   function goHome() {
+    setActiveView('home')
     setSelectedNoteId(null)
     setMobileOpen(false)
+  }
+
+  function openChat() {
+    setActiveView('chat')
+    setSelectedNoteId(null)
+    setMobileOpen(false)
+  }
+
+  function sendChatMessage() {
+    const content = chatDraft.trim()
+    if (!content && chatAttachments.length === 0) return
+    setChatMessages((messages) => [...messages, {
+      id: crypto.randomUUID(), role: 'user', content, attachments: chatAttachments,
+    }])
+    setChatDraft('')
+    setChatAttachments([])
+  }
+
+  function addChatAttachments(files: File[]) {
+    setChatAttachments((attachments) => [...attachments, ...files.map((file) => ({ id: crypto.randomUUID(), file }))])
+  }
+
+  function removeChatAttachment(id: string) {
+    setChatAttachments((attachments) => attachments.filter((attachment) => attachment.id !== id))
   }
 
   const sidebarProps = {
@@ -63,6 +100,8 @@ function App() {
     loading,
     loadError,
     selectedNoteId,
+    activeView,
+    onChat: openChat,
     onHome: goHome,
     onCreateNote: createNote,
     onSelectNote: selectNote,
@@ -75,7 +114,7 @@ function App() {
   }
 
   return (
-    <div className="flex min-h-svh bg-background text-foreground">
+    <div className={`flex bg-background text-foreground ${activeView === 'chat' ? 'h-svh overflow-hidden' : 'min-h-svh'}`}>
       {sidebarOpen && (
         <aside id="desktop-sidebar" aria-label="Sidebar" className="sticky top-0 hidden h-svh w-64 shrink-0 flex-col border-r border-sidebar-border/60 bg-sidebar md:flex">
           <div className="flex h-16 shrink-0 items-center justify-between gap-2 px-4">
@@ -87,7 +126,7 @@ function App() {
           <Sidebar {...sidebarProps} />
         </aside>
       )}
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <header className="flex h-16 shrink-0 items-center gap-3 px-4 sm:px-6">
           <Dialog.Root open={mobileOpen} onOpenChange={setMobileOpen}>
             <Dialog.Trigger asChild>
@@ -132,8 +171,12 @@ function App() {
             <Button variant="outline" onClick={retrySave}>Retry save</Button>
           </div>
         )}
-        <main className={selectedNote ? 'flex-1 px-6 py-8 sm:px-8 sm:py-12' : 'flex-1 px-5 pb-12 pt-4 sm:px-8 sm:pt-6 lg:px-12'}>
-          {loading ? <p role="status">Loading workspace…</p> : loadError ? (
+        <main className={activeView === 'chat' ? 'flex min-h-0 flex-1 flex-col' : selectedNote ? 'flex-1 px-6 py-8 sm:px-8 sm:py-12' : 'flex-1 px-5 pb-12 pt-4 sm:px-8 sm:pt-6 lg:px-12'}>
+          {activeView === 'chat' ? (
+            <ChatView messages={chatMessages} draft={chatDraft} attachments={chatAttachments}
+              onDraftChange={setChatDraft} onSend={sendChatMessage}
+              onAddAttachments={addChatAttachments} onRemoveAttachment={removeChatAttachment} />
+          ) : loading ? <p role="status">Loading workspace…</p> : loadError ? (
             <p className="text-sm text-muted-foreground">Your folders and notes will appear here once the workspace loads.</p>
           ) : selectedNote ? (
             <NoteView
