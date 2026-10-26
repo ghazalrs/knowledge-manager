@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { PanelLeft, X } from 'lucide-react'
 import { Dialog } from 'radix-ui'
 import { Sidebar } from '@/components/layout/sidebar'
+import { DesktopSidebar } from '@/components/layout/desktop-sidebar'
 import { NoteView } from '@/components/notes/note-view'
 import { WelcomeView } from '@/components/home/welcome-view'
 import { ChatView } from '@/components/chat/chat-view'
@@ -125,7 +126,7 @@ function App() {
   return (
     <div className={`flex bg-background text-foreground ${activeView === 'chat' ? 'h-svh overflow-hidden' : 'min-h-svh'}`}>
       {sidebarOpen && (
-        <aside id="desktop-sidebar" aria-label="Sidebar" className="sticky top-0 hidden h-svh w-64 shrink-0 flex-col border-r border-sidebar-border/60 bg-sidebar md:flex">
+        <DesktopSidebar>
           <div className="flex h-16 shrink-0 items-center justify-between gap-2 px-4">
             <span className="text-sm font-medium tracking-tight text-foreground/80">Knowledge Manager</span>
             <Button variant="ghost" size="icon" aria-label="Collapse sidebar" aria-expanded={true} aria-controls="desktop-sidebar" onClick={() => setSidebarOpen(false)}>
@@ -133,7 +134,7 @@ function App() {
             </Button>
           </div>
           <Sidebar {...sidebarProps} />
-        </aside>
+        </DesktopSidebar>
       )}
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <header className="flex h-16 shrink-0 items-center gap-3 px-4 sm:px-6">
