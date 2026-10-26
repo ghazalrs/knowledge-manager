@@ -10,15 +10,20 @@ import type { Note } from '@/types/note'
 import type { WorkspaceView } from '@/types/chat'
 import { useWorkspace } from '@/hooks/use-workspace'
 import { useChat } from '@/hooks/use-chat'
+import type { SidebarSectionId } from '@/components/layout/sidebar-section'
 
 function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [activeView, setActiveView] = useState<WorkspaceView>('home')
+  const [collapsedSections, setCollapsedSections] = useState<Record<SidebarSectionId, boolean>>({ chats: false, folders: false, notes: false })
   const {
     messages: chatMessages, draft: chatDraft, attachments: chatAttachments, sending: chatSending, error: chatError,
     setDraft: setChatDraft, sendMessage: sendChatMessage, addAttachments: addChatAttachments,
     removeAttachment: removeChatAttachment, retry: retryChat,
+    loading: chatLoading, loadError: chatLoadError, retryLoad: retryChatLoad,
+    conversations, activeConversationId, newChat, selectConversation, renameChat, deleteChat, chatMutationError,
+    conversationsLoading, conversationsError, retryConversations,
   } = useChat()
 
   const {
@@ -73,7 +78,15 @@ function App() {
     setMobileOpen(false)
   }
 
-  function openChat() {
+  function openChat(id: string) {
+    selectConversation(id)
+    setActiveView('chat')
+    setSelectedNoteId(null)
+    setMobileOpen(false)
+  }
+
+  function startNewChat() {
+    newChat()
     setActiveView('chat')
     setSelectedNoteId(null)
     setMobileOpen(false)
@@ -86,7 +99,18 @@ function App() {
     loadError,
     selectedNoteId,
     activeView,
-    onChat: openChat,
+    conversations,
+    activeConversationId,
+    collapsedSections,
+    onToggleSection: (id: SidebarSectionId) => setCollapsedSections((current) => ({ ...current, [id]: !current[id] })),
+    chatLoading: conversationsLoading,
+    chatLoadError: !!conversationsError,
+    onRetryChatLoad: retryConversations,
+    onNewChat: startNewChat,
+    onSelectConversation: openChat,
+    onRenameConversation: renameChat,
+    onDeleteConversation: deleteChat,
+    chatMutationError,
     onHome: goHome,
     onCreateNote: createNote,
     onSelectNote: selectNote,
@@ -158,8 +182,9 @@ function App() {
         )}
         <main className={activeView === 'chat' ? 'flex min-h-0 flex-1 flex-col' : selectedNote ? 'flex-1 px-6 py-8 sm:px-8 sm:py-12' : 'flex-1 px-5 pb-12 pt-4 sm:px-8 sm:pt-6 lg:px-12'}>
           {activeView === 'chat' ? (
-            <ChatView messages={chatMessages} draft={chatDraft} attachments={chatAttachments}
+            <ChatView key={activeConversationId} messages={chatMessages} draft={chatDraft} attachments={chatAttachments}
               sending={chatSending} error={chatError} onRetry={retryChat}
+              loading={chatLoading} loadError={chatLoadError} onRetryLoad={retryChatLoad}
               onDraftChange={setChatDraft} onSend={sendChatMessage}
               onAddAttachments={addChatAttachments} onRemoveAttachment={removeChatAttachment} />
           ) : loading ? <p role="status">Loading workspace…</p> : loadError ? (

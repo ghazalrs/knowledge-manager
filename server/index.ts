@@ -6,14 +6,16 @@ import { NotesStore } from './notes-store.ts'
 import { createNotesApi, isLocalRequest } from './api.ts'
 import { createChatApi } from './chat-api.ts'
 import { loadChatConfig } from './chat-config.ts'
+import { ChatStore } from './chat-store.ts'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
-const chatApi = createChatApi(await loadChatConfig(resolve(root, '.env.local')))
 const production = process.argv.includes('--production')
 const port = production ? 4173 : 5173
 const databasePath = resolve(root, 'data/knowledge-manager.sqlite')
 await mkdir(dirname(databasePath), { recursive: true })
 const store = new NotesStore(databasePath)
+const chatStore = new ChatStore(databasePath)
+const chatApi = createChatApi(await loadChatConfig(resolve(root, '.env.local')), chatStore)
 const api = createNotesApi(store)
 const vite = production ? null : await (await import('vite')).createServer({
   root,
@@ -29,7 +31,8 @@ const mime: Record<string, string> = {
 
 const server = createServer(async (request, response) => {
   if (!isLocalRequest(request)) { response.writeHead(403).end('Local app requests only'); return }
-  if (request.url?.split('?')[0] === '/api/chat') { await chatApi(request, response); return }
+  const path = request.url?.split('?')[0]
+  if (path === '/api/chat' || path?.startsWith('/api/chat/')) { await chatApi(request, response); return }
   if (request.url?.split('?')[0].startsWith('/api/')) { await api(request, response); return }
   if (vite) { vite.middlewares(request, response); return }
   if (request.method !== 'GET' && request.method !== 'HEAD') { response.writeHead(405).end(); return }
@@ -53,6 +56,7 @@ async function shutdown(code = 0) {
   server.closeAllConnections()
   await vite?.close()
   store.close()
+  chatStore.close()
   process.exit(code)
 }
 server.on('error', (error) => {

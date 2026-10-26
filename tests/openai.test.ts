@@ -1,8 +1,19 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { generateReply } from '../server/openai.ts'
+import { generateReply, generateConversationTitle } from '../server/openai.ts'
 
 const messages = [{ role: 'user' as const, content: 'Hello' }, { role: 'assistant' as const, content: 'Hi' }, { role: 'user' as const, content: 'Continue' }]
+
+test('title requests focus on user intent and recognize an insufficient-topic response', async () => {
+  const fetcher: typeof fetch = async (_url, init) => {
+    const body = JSON.parse(init?.body as string)
+    assert.match(body.instructions, /Ignore greetings/)
+    assert.match(body.instructions, /main task or topic/)
+    assert.deepEqual(body.input, messages)
+    return Response.json({ output: [{ type: 'message', content: [{ type: 'output_text', text: 'WAIT_FOR_TOPIC' }] }] })
+  }
+  assert.equal(await generateConversationTitle(messages, { apiKey: 'test', model: 'test', fetcher }), '')
+})
 
 test('sends text context with server credentials and extracts text across output items', async () => {
   const fetcher: typeof fetch = async (url, init) => {

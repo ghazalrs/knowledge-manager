@@ -10,6 +10,9 @@ type ChatViewProps = {
   attachments: ChatAttachment[]
   sending: boolean
   error: string
+  loading: boolean
+  loadError: string
+  onRetryLoad: () => void
   onRetry: () => void
   onAddAttachments: (files: File[]) => void
   onRemoveAttachment: (id: string) => void
@@ -17,7 +20,7 @@ type ChatViewProps = {
   onSend: () => void
 }
 
-export function ChatView({ messages, draft, attachments, sending, error, onRetry, onAddAttachments, onRemoveAttachment, onDraftChange, onSend }: ChatViewProps) {
+export function ChatView({ messages, draft, attachments, sending, error, loading, loadError, onRetryLoad, onRetry, onAddAttachments, onRemoveAttachment, onDraftChange, onSend }: ChatViewProps) {
   const textarea = useRef<HTMLTextAreaElement>(null)
   const messageEnd = useRef<HTMLDivElement>(null)
   const composerId = useId()
@@ -37,7 +40,9 @@ export function ChatView({ messages, draft, attachments, sending, error, onRetry
   return (
     <section aria-label="Chat" className="flex min-h-0 flex-1 flex-col">
       <div className="min-h-0 flex-1 overflow-y-auto px-5 sm:px-6">
-        {messages.length === 0 ? (
+        {loading ? <p role="status" className="mx-auto max-w-3xl py-8 text-sm text-muted-foreground">Loading chat history…</p>
+        : loadError ? <p className="mx-auto max-w-3xl py-8 text-sm text-muted-foreground">Retry below to restore your saved conversation.</p>
+        : messages.length === 0 ? (
           <div className="mx-auto flex h-full min-h-48 w-full max-w-xl flex-col items-center justify-center pb-8 text-center">
             <h2 className="text-2xl font-medium tracking-tight sm:text-3xl">What’s on your mind?</h2>
             <p className="mt-3 max-w-sm text-sm leading-6 text-muted-foreground">Capture a thought, ask a question, or paste something you want to explore.</p>
@@ -68,6 +73,12 @@ export function ChatView({ messages, draft, attachments, sending, error, onRetry
         <div ref={messageEnd} />
       </div>
       <div className="mx-auto w-full max-w-3xl shrink-0 px-5 pb-4 pt-4 sm:px-6 sm:pb-5">
+        {loadError && (
+          <div role="alert" className="mb-3 flex flex-wrap items-center gap-2 rounded-xl bg-destructive/5 p-3 text-sm">
+            <p className="min-w-0 flex-1 text-destructive">{loadError}</p>
+            <Button type="button" variant="outline" onClick={onRetryLoad}>Retry history</Button>
+          </div>
+        )}
         {error && (
           <div role="alert" className="mb-3 flex flex-wrap items-center gap-2 rounded-xl bg-destructive/5 p-3 text-sm">
             <p className="min-w-0 flex-1 text-destructive">{error}</p>
@@ -107,11 +118,11 @@ export function ChatView({ messages, draft, attachments, sending, error, onRetry
               aria-label="Attach files" aria-controls={fileInputId} title="Attach files" onClick={() => fileInput.current?.click()}>
               <Plus aria-hidden="true" className="size-5" />
             </Button>
-            <Button type="submit" size="icon-lg" className="absolute right-2.5 bottom-2.5 rounded-full" aria-label="Send message" disabled={sending || (!draft.trim() && attachments.length === 0)}>
+            <Button type="submit" size="icon-lg" className="absolute right-2.5 bottom-2.5 rounded-full" aria-label="Send message" disabled={loading || !!loadError || sending || (!draft.trim() && attachments.length === 0)}>
               <ArrowUp aria-hidden="true" />
             </Button>
         </form>
-        <p className="mt-2 px-2 text-center text-xs leading-5 text-muted-foreground">Only message text is sent to OpenAI. Attachments stay local. Chat resets on refresh.</p>
+        <p className="mt-2 px-2 text-center text-xs leading-5 text-muted-foreground">Text history is saved on this computer. Only text is sent to OpenAI; files stay in this session.</p>
       </div>
     </section>
   )

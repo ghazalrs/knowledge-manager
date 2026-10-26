@@ -1,12 +1,14 @@
-import { useId, useState } from 'react'
-import { FolderPlus, Home, MessageSquare, Plus } from 'lucide-react'
+import { useState } from 'react'
+import { FolderPlus, Home, Plus, SquarePen } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { ChatHistoryRow } from '@/components/chat/chat-history-row'
 import { NoteRow } from '@/components/notes/note-row'
 import type { Note } from '@/types/note'
 import type { Folder } from '@/types/folder'
 import { FolderRow } from '@/components/folders/folder-row'
 import { useNoteDrop } from '@/hooks/use-note-drop'
-import type { WorkspaceView } from '@/types/chat'
+import type { Conversation, WorkspaceView } from '@/types/chat'
+import { SidebarSection, type SidebarSectionId } from '@/components/layout/sidebar-section'
 
 type SidebarProps = {
   notes: Note[]
@@ -15,7 +17,18 @@ type SidebarProps = {
   loadError: boolean
   selectedNoteId: string | null
   activeView: WorkspaceView
-  onChat: () => void
+  conversations: Conversation[]
+  activeConversationId: string
+  collapsedSections: Record<SidebarSectionId, boolean>
+  onToggleSection: (id: SidebarSectionId) => void
+  chatLoading: boolean
+  chatLoadError: boolean
+  onRetryChatLoad: () => void
+  onNewChat: () => void
+  onSelectConversation: (id: string) => void
+  onRenameConversation: (id: string, title: string) => void
+  onDeleteConversation: (id: string) => void
+  chatMutationError: string
   onHome: () => void
   onCreateNote: (folderId?: string | null) => void
   onSelectNote: (id: string) => void
@@ -27,13 +40,15 @@ type SidebarProps = {
   onDeleteFolder: (id: string) => void
 }
 
-export function Sidebar({ notes, folders, loading, loadError, selectedNoteId, activeView, onChat, onHome, onCreateNote, onSelectNote, onRenameNote, onDeleteNote, onMoveNote, onCreateFolder, onRenameFolder, onDeleteFolder }: SidebarProps) {
-  const notesHeadingId = useId()
-  const foldersHeadingId = useId()
+export function Sidebar({ notes, folders, loading, loadError, selectedNoteId, activeView, conversations, activeConversationId, collapsedSections, onToggleSection, chatLoading, chatLoadError, onRetryChatLoad, onNewChat, onSelectConversation, onRenameConversation, onDeleteConversation, chatMutationError, onHome, onCreateNote, onSelectNote, onRenameNote, onDeleteNote, onMoveNote, onCreateFolder, onRenameFolder, onDeleteFolder }: SidebarProps) {
   const topLevelNotes = notes.filter((note) => note.folderId === null)
   const [draggedNoteId, setDraggedNoteId] = useState<string | null>(null)
   const draggedNote = notes.find((note) => note.id === draggedNoteId)
-  const { isOver, dropProps } = useNoteDrop(null, draggedNote, onMoveNote, () => setDraggedNoteId(null))
+  const { isOver, dropProps } = useNoteDrop(null, draggedNote, (id, folderId) => {
+    onMoveNote(id, folderId)
+    if (collapsedSections.notes) onToggleSection('notes')
+  }, () => setDraggedNoteId(null))
+  const newChatActive = activeView === 'chat' && !conversations.some((item) => item.id === activeConversationId)
 
   return (
     <nav aria-label="Main navigation" className="flex flex-1 flex-col gap-7 overflow-y-auto px-3 pb-5 pt-2 [&_svg]:text-muted-foreground">
@@ -47,11 +62,11 @@ export function Sidebar({ notes, folders, loading, loadError, selectedNoteId, ac
           <Home aria-hidden="true" />
           Home
         </Button>
-        <Button variant={activeView === 'chat' ? 'secondary' : 'ghost'}
+        <Button variant={newChatActive ? 'secondary' : 'ghost'}
           className="h-10 w-full justify-start gap-3 rounded-xl font-normal"
-          aria-current={activeView === 'chat' ? 'page' : undefined} onClick={onChat}>
-          <MessageSquare aria-hidden="true" />
-          Chat
+          aria-current={newChatActive ? 'page' : undefined} onClick={onNewChat}>
+          <SquarePen aria-hidden="true" />
+          New chat
         </Button>
         <Button variant="ghost" className="h-10 w-full justify-start gap-3 rounded-xl font-normal" onClick={() => onCreateNote()} disabled={loading || loadError}>
           <Plus aria-hidden="true" />
@@ -62,8 +77,28 @@ export function Sidebar({ notes, folders, loading, loadError, selectedNoteId, ac
           New folder
         </Button>
       </div>
-      <section aria-labelledby={foldersHeadingId}>
-        <h2 id={foldersHeadingId} className="px-3 text-xs font-medium text-muted-foreground">Folders</h2>
+      <SidebarSection title="Chat history" collapsed={collapsedSections.chats} onToggle={() => onToggleSection('chats')}>
+        {chatMutationError && <p role="alert" className="px-3 text-sm text-destructive">{chatMutationError}</p>}
+        {chatLoading ? (
+          <p role="status" className="mt-3 px-3 text-sm text-muted-foreground">Loading chats…</p>
+        ) : chatLoadError ? (
+          <div className="mt-2 px-3 text-sm text-muted-foreground">
+            <p>Chat history unavailable.</p>
+            <Button variant="ghost" size="sm" className="mt-1" onClick={onRetryChatLoad}>Retry</Button>
+          </div>
+        ) : conversations.length > 0 ? (
+          <ul className="mt-2 space-y-1">
+            {conversations.map((conversation) => (
+              <ChatHistoryRow key={conversation.id} conversation={conversation}
+                selected={activeView === 'chat' && activeConversationId === conversation.id}
+                onSelect={onSelectConversation} onRename={onRenameConversation} onDelete={onDeleteConversation} />
+            ))}
+          </ul>
+        ) : (
+          <p className="mt-3 px-3 text-sm text-muted-foreground">No saved chats yet.</p>
+        )}
+      </SidebarSection>
+      <SidebarSection title="Folders" collapsed={collapsedSections.folders} onToggle={() => onToggleSection('folders')}>
         {loading || loadError ? (
           <p className="mt-3 px-3 text-sm text-muted-foreground">{loading ? 'Loading folders…' : 'Folders unavailable.'}</p>
         ) : folders.length === 0 ? (
@@ -80,10 +115,9 @@ export function Sidebar({ notes, folders, loading, loadError, selectedNoteId, ac
             ))}
           </ul>
         )}
-      </section>
-      <section aria-labelledby={notesHeadingId} {...dropProps}
-        className={`min-h-20 rounded-lg ${isOver ? 'bg-accent ring-2 ring-ring' : ''}`}>
-        <h2 id={notesHeadingId} className="px-3 text-xs font-medium text-muted-foreground">Notes</h2>
+      </SidebarSection>
+      <SidebarSection title="Notes" collapsed={collapsedSections.notes} onToggle={() => onToggleSection('notes')} {...dropProps}
+        className={`rounded-lg ${collapsedSections.notes ? '' : 'min-h-20'} ${isOver ? 'bg-accent ring-2 ring-ring' : ''}`}>
         {loading || loadError ? (
           <p className="mt-3 px-3 text-sm text-muted-foreground">{loading ? 'Loading notes…' : 'Notes unavailable.'}</p>
         ) : topLevelNotes.length === 0 ? (
@@ -105,7 +139,7 @@ export function Sidebar({ notes, folders, loading, loadError, selectedNoteId, ac
             ))}
           </ul>
         )}
-      </section>
+      </SidebarSection>
     </nav>
   )
 }
