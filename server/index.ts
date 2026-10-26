@@ -4,8 +4,11 @@ import { dirname, extname, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { NotesStore } from './notes-store.ts'
 import { createNotesApi, isLocalRequest } from './api.ts'
+import { createChatApi } from './chat-api.ts'
+import { loadChatConfig } from './chat-config.ts'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
+const chatApi = createChatApi(await loadChatConfig(resolve(root, '.env.local')))
 const production = process.argv.includes('--production')
 const port = production ? 4173 : 5173
 const databasePath = resolve(root, 'data/knowledge-manager.sqlite')
@@ -26,6 +29,7 @@ const mime: Record<string, string> = {
 
 const server = createServer(async (request, response) => {
   if (!isLocalRequest(request)) { response.writeHead(403).end('Local app requests only'); return }
+  if (request.url?.split('?')[0] === '/api/chat') { await chatApi(request, response); return }
   if (request.url?.split('?')[0].startsWith('/api/')) { await api(request, response); return }
   if (vite) { vite.middlewares(request, response); return }
   if (request.method !== 'GET' && request.method !== 'HEAD') { response.writeHead(405).end(); return }

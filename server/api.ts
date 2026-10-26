@@ -2,7 +2,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Note, NoteChanges } from '../src/types/note.ts'
 import type { NotesStore } from './notes-store.ts'
 
-class RequestError extends Error {
+export class RequestError extends Error {
   status: number
   constructor(status: number, message: string) {
     super(message)
@@ -17,7 +17,7 @@ export function isLocalRequest(request: IncomingMessage) {
   return !request.headers.origin || request.headers.origin === `http://${host}`
 }
 
-function isObject(value: unknown): value is Record<string, unknown> {
+export function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
@@ -29,7 +29,7 @@ function validTitle(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0
 }
 
-async function readBody(request: IncomingMessage): Promise<Record<string, unknown>> {
+export async function readBody(request: IncomingMessage): Promise<Record<string, unknown>> {
   if (request.headers['content-type']?.split(';')[0] !== 'application/json') {
     throw new RequestError(415, 'Expected JSON')
   }
@@ -37,7 +37,7 @@ async function readBody(request: IncomingMessage): Promise<Record<string, unknow
   let size = 0
   for await (const chunk of request) {
     size += chunk.length
-    if (size > 5 * 1024 * 1024) throw new RequestError(413, 'Note exceeds the 5 MB limit')
+    if (size > 5 * 1024 * 1024) throw new RequestError(413, 'Request exceeds the 5 MB limit')
     chunks.push(Buffer.from(chunk))
   }
   let body: unknown
@@ -47,7 +47,7 @@ async function readBody(request: IncomingMessage): Promise<Record<string, unknow
   return body
 }
 
-function json(response: ServerResponse, status: number, value: unknown) {
+export function json(response: ServerResponse, status: number, value: unknown) {
   response.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
   response.end(JSON.stringify(value))
 }

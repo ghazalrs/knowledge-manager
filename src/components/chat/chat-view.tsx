@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef } from 'react'
-import { ArrowUp, Plus } from 'lucide-react'
+import { ArrowUp, LoaderCircle, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import type { ChatAttachment, ChatMessage } from '@/types/chat'
 import { AttachmentList } from '@/components/chat/attachment-list'
@@ -8,13 +8,16 @@ type ChatViewProps = {
   messages: ChatMessage[]
   draft: string
   attachments: ChatAttachment[]
+  sending: boolean
+  error: string
+  onRetry: () => void
   onAddAttachments: (files: File[]) => void
   onRemoveAttachment: (id: string) => void
   onDraftChange: (value: string) => void
   onSend: () => void
 }
 
-export function ChatView({ messages, draft, attachments, onAddAttachments, onRemoveAttachment, onDraftChange, onSend }: ChatViewProps) {
+export function ChatView({ messages, draft, attachments, sending, error, onRetry, onAddAttachments, onRemoveAttachment, onDraftChange, onSend }: ChatViewProps) {
   const textarea = useRef<HTMLTextAreaElement>(null)
   const messageEnd = useRef<HTMLDivElement>(null)
   const composerId = useId()
@@ -23,7 +26,7 @@ export function ChatView({ messages, draft, attachments, onAddAttachments, onRem
 
   useEffect(() => {
     messageEnd.current?.scrollIntoView({ block: 'end' })
-  }, [messages.length])
+  }, [messages.length, sending])
 
   useEffect(() => {
     if (!textarea.current) return
@@ -42,9 +45,12 @@ export function ChatView({ messages, draft, attachments, onAddAttachments, onRem
         ) : (
           <ol role="log" aria-label="Chat messages" aria-live="polite" aria-relevant="additions" className="mx-auto w-full max-w-3xl space-y-5 py-4">
             {messages.map((message) => (
-              <li key={message.id} className="flex justify-end">
-                <div className="max-w-[90%] rounded-2xl rounded-br-md bg-muted/75 px-4 py-3 text-sm leading-7 sm:max-w-[80%] sm:px-5">
-                  <span className="sr-only">You: </span>
+              <li key={message.id} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                <div className={message.role === 'user'
+                  ? 'max-w-[90%] rounded-2xl rounded-br-md bg-muted/75 px-4 py-3 text-sm leading-7 sm:max-w-[80%] sm:px-5'
+                  : 'w-full min-w-0 px-1 py-3 text-sm leading-7'}>
+                  {message.role === 'user' ? <span className="sr-only">You: </span>
+                    : <p className="mb-1 text-xs font-medium text-muted-foreground"></p>}
                   {message.attachments.length > 0 && (
                     <div className={message.content ? 'mb-2' : ''}><AttachmentList attachments={message.attachments} /></div>
                   )}
@@ -54,9 +60,20 @@ export function ChatView({ messages, draft, attachments, onAddAttachments, onRem
             ))}
           </ol>
         )}
+        {sending && (
+          <p role="status" className="mx-auto flex w-full max-w-3xl items-center gap-2 py-4 text-sm text-muted-foreground">
+            <LoaderCircle aria-hidden="true" className="size-4 motion-safe:animate-spin" /> Thinking…
+          </p>
+        )}
         <div ref={messageEnd} />
       </div>
       <div className="mx-auto w-full max-w-3xl shrink-0 px-5 pb-4 pt-4 sm:px-6 sm:pb-5">
+        {error && (
+          <div role="alert" className="mb-3 flex flex-wrap items-center gap-2 rounded-xl bg-destructive/5 p-3 text-sm">
+            <p className="min-w-0 flex-1 text-destructive">{error}</p>
+            <Button type="button" variant="outline" onClick={onRetry} disabled={sending}>Retry reply</Button>
+          </div>
+        )}
         <form className="relative rounded-3xl bg-muted/65 p-2.5 focus-within:ring-2 focus-within:ring-ring"
           onSubmit={(event) => {
             event.preventDefault()
@@ -90,10 +107,11 @@ export function ChatView({ messages, draft, attachments, onAddAttachments, onRem
               aria-label="Attach files" aria-controls={fileInputId} title="Attach files" onClick={() => fileInput.current?.click()}>
               <Plus aria-hidden="true" className="size-5" />
             </Button>
-            <Button type="submit" size="icon-lg" className="absolute right-2.5 bottom-2.5 rounded-full" aria-label="Send message" disabled={!draft.trim() && attachments.length === 0}>
+            <Button type="submit" size="icon-lg" className="absolute right-2.5 bottom-2.5 rounded-full" aria-label="Send message" disabled={sending || (!draft.trim() && attachments.length === 0)}>
               <ArrowUp aria-hidden="true" />
             </Button>
         </form>
+        <p className="mt-2 px-2 text-center text-xs leading-5 text-muted-foreground">Only message text is sent to OpenAI. Attachments stay local. Chat resets on refresh.</p>
       </div>
     </section>
   )

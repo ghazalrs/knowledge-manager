@@ -7,16 +7,19 @@ import { WelcomeView } from '@/components/home/welcome-view'
 import { ChatView } from '@/components/chat/chat-view'
 import { Button } from '@/components/ui/button'
 import type { Note } from '@/types/note'
-import type { ChatAttachment, ChatMessage, WorkspaceView } from '@/types/chat'
+import type { WorkspaceView } from '@/types/chat'
 import { useWorkspace } from '@/hooks/use-workspace'
+import { useChat } from '@/hooks/use-chat'
 
 function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [activeView, setActiveView] = useState<WorkspaceView>('home')
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
-  const [chatDraft, setChatDraft] = useState('')
-  const [chatAttachments, setChatAttachments] = useState<ChatAttachment[]>([])
+  const {
+    messages: chatMessages, draft: chatDraft, attachments: chatAttachments, sending: chatSending, error: chatError,
+    setDraft: setChatDraft, sendMessage: sendChatMessage, addAttachments: addChatAttachments,
+    removeAttachment: removeChatAttachment, retry: retryChat,
+  } = useChat()
 
   const {
     notes, folders, loading, loadError, saveStatus,
@@ -74,24 +77,6 @@ function App() {
     setActiveView('chat')
     setSelectedNoteId(null)
     setMobileOpen(false)
-  }
-
-  function sendChatMessage() {
-    const content = chatDraft.trim()
-    if (!content && chatAttachments.length === 0) return
-    setChatMessages((messages) => [...messages, {
-      id: crypto.randomUUID(), role: 'user', content, attachments: chatAttachments,
-    }])
-    setChatDraft('')
-    setChatAttachments([])
-  }
-
-  function addChatAttachments(files: File[]) {
-    setChatAttachments((attachments) => [...attachments, ...files.map((file) => ({ id: crypto.randomUUID(), file }))])
-  }
-
-  function removeChatAttachment(id: string) {
-    setChatAttachments((attachments) => attachments.filter((attachment) => attachment.id !== id))
   }
 
   const sidebarProps = {
@@ -174,6 +159,7 @@ function App() {
         <main className={activeView === 'chat' ? 'flex min-h-0 flex-1 flex-col' : selectedNote ? 'flex-1 px-6 py-8 sm:px-8 sm:py-12' : 'flex-1 px-5 pb-12 pt-4 sm:px-8 sm:pt-6 lg:px-12'}>
           {activeView === 'chat' ? (
             <ChatView messages={chatMessages} draft={chatDraft} attachments={chatAttachments}
+              sending={chatSending} error={chatError} onRetry={retryChat}
               onDraftChange={setChatDraft} onSend={sendChatMessage}
               onAddAttachments={addChatAttachments} onRemoveAttachment={removeChatAttachment} />
           ) : loading ? <p role="status">Loading workspace…</p> : loadError ? (
