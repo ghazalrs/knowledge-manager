@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { isLocalRequest, json, readBody, RequestError } from './api.ts'
-import { generateReply, generateConversationTitle } from './openai.ts'
+import { generateReply, generateConversationTitle, generateNoteProposal } from './openai.ts'
 import type { ChatStore } from './chat-store.ts'
 import type { StoredChatMessage } from '../src/types/chat.ts'
 
@@ -32,6 +32,19 @@ export function createChatApi(options: { apiKey?: string; model: string; fetcher
     try {
       const url = new URL(request.url ?? '/', 'http://localhost')
       const path = url.pathname
+      const proposalRoute = /^\/api\/chat\/conversations\/([a-zA-Z0-9_-]{1,128})\/proposals\/([a-zA-Z0-9_-]{1,128})$/.exec(path)
+      if (proposalRoute && request.method === 'POST') {
+        const body = await readBody(request)
+        if (body.action !== 'save' && body.action !== 'discard') throw new RequestError(400, 'Choose Save or Discard.')
+        if (Object.keys(body).some((key) => !['action', 'title', 'content'].includes(key))
+          || (body.action === 'save' && (typeof body.title !== 'string' || !body.title.trim() || body.title.length > 200
+            || typeof body.content !== 'string' || !body.content.trim() || body.content.length > 50000))) {
+          throw new RequestError(400, 'Provide a title (up to 200 characters) and note text (up to 50,000 characters).')
+        }
+        json(response, 200, store.resolveProposal(proposalRoute[1], proposalRoute[2], body.action,
+          typeof body.title === 'string' ? body.title.trim() : undefined, typeof body.content === 'string' ? body.content.trim() : undefined))
+        return
+      }
       const conversationRoute = /^\/api\/chat\/conversations\/([a-zA-Z0-9_-]{1,128})$/.exec(path)
       if (conversationRoute && (request.method === 'PATCH' || request.method === 'DELETE')) {
         const id = conversationRoute[1]
@@ -70,7 +83,8 @@ export function createChatApi(options: { apiKey?: string; model: string; fetcher
       if (path !== '/api/chat') { json(response, 404, { error: 'Unknown chat route' }); return }
       if (request.method !== 'POST') { json(response, 405, { error: 'Use POST for chat' }); return }
       const body = await readBody(request)
-      if (Object.keys(body).some((key) => key !== 'id' && key !== 'content' && key !== 'conversationId')
+      if (Object.keys(body).some((key) => key !== 'id' && key !== 'content' && key !== 'conversationId' && key !== 'mode')
+        || (body.mode !== undefined && body.mode !== 'ask' && body.mode !== 'organize')
         || (body.conversationId !== undefined && (typeof body.conversationId !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(body.conversationId)))
         || typeof body.id !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(body.id)
         || typeof body.content !== 'string' || !body.content.trim()) {
@@ -79,17 +93,18 @@ export function createChatApi(options: { apiKey?: string; model: string; fetcher
       if (body.content.length > 50000) throw new RequestError(413, 'This message is too long. Please shorten it.')
       const id = body.id
       const content = body.content.trim()
+      const mode = body.mode === 'organize' ? 'organize' : 'ask'
       const conversationId = typeof body.conversationId === 'string' ? body.conversationId : 'main'
       if (!store.hasConversation(conversationId)) throw new RequestError(404, 'Conversation not found.')
       const savedReply = store.findReply(id, conversationId)
       if (savedReply) {
-        if (!store.saveUserMessage(id, content, conversationId)) throw new RequestError(409, 'This message ID is already in use.')
+        if (!store.saveUserMessage(id, content, conversationId, mode)) throw new RequestError(409, 'This message ID is already in use.')
         json(response, 200, savedReply)
         return
       }
       const running = inFlight.get(conversationId)
       if (running && running.id !== id) throw new RequestError(409, 'Another reply is being generated in this chat. Please retry after it finishes.')
-      if (!store.saveUserMessage(id, content, conversationId)) throw new RequestError(409, 'This message ID is already in use.')
+      if (!store.saveUserMessage(id, content, conversationId, mode)) throw new RequestError(409, 'This message ID is already in use.')
       let work = running?.work
       if (!work) {
         work = (async () => {
@@ -99,9 +114,11 @@ export function createChatApi(options: { apiKey?: string; model: string; fetcher
           while (context.length > 1 && (length > 100000 || context[0].role !== 'user')) {
             length -= context.shift()!.content.length
           }
-          const reply = await generateReply(context.map(({ role, content: text }) => ({ role, content: text })), options)
+          const input = context.map(({ role, content: text }) => ({ role, content: text }))
+          const proposal = mode === 'organize' ? await generateNoteProposal(input, options) : undefined
+          const reply = proposal ? { content: 'Review this proposed note. Edit it, then choose Save note to add it to your workspace.' } : await generateReply(input, options)
           if (!store.hasConversation(conversationId)) throw new RequestError(404, 'Conversation was deleted.')
-          const saved = store.saveReply(id, reply.content, conversationId)
+          const saved = store.saveReply(id, reply.content, conversationId, proposal)
           updateTitle(conversationId)
           return saved
         })()

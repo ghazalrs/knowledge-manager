@@ -3,8 +3,34 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
+import { DatabaseSync } from 'node:sqlite'
 import { ChatStore } from '../server/chat-store.ts'
 import { NotesStore } from '../server/notes-store.ts'
+
+test('failed approval rolls back both the note and proposal status and can be retried', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'knowledge-manager-approval-'))
+  const path = join(directory, 'chat.sqlite')
+  const notes = new NotesStore(path)
+  const store = new ChatStore(path)
+  const setup = new DatabaseSync(path)
+  try {
+    store.createConversation('approval')
+    store.saveUserMessage('approval-user', 'Study data', 'approval', 'organize')
+    const message = store.saveReply('approval-user', 'Review this draft', 'approval', { title: 'Study', content: 'Original text', status: 'pending' })
+    setup.exec("CREATE TRIGGER fail_note BEFORE INSERT ON notes BEGIN SELECT RAISE(ABORT, 'simulated write failure'); END")
+    assert.throws(() => store.resolveProposal('approval', message.id, 'save', 'Edited title', 'Edited text'), /simulated write failure/)
+    assert.deepEqual(notes.loadNotes(), [])
+    assert.equal(store.loadMessages('approval')[1].proposal?.status, 'pending')
+    setup.exec('DROP TRIGGER fail_note')
+    const result = store.resolveProposal('approval', message.id, 'save', 'Edited title', 'Edited text')
+    assert.equal(result.message.proposal?.status, 'saved')
+    assert.equal(notes.loadNotes().length, 1)
+    assert.equal(notes.loadNotes()[0].title, 'Edited title')
+  } finally {
+    setup.close(); store.close(); notes.close()
+    await rm(directory, { recursive: true, force: true })
+  }
+})
 
 test('chat text survives reopening in order without duplicate messages or changes to notes', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'knowledge-manager-chat-'))

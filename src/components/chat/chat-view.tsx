@@ -1,7 +1,8 @@
 import { useEffect, useId, useRef } from 'react'
 import { ArrowUp, LoaderCircle, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import type { ChatAttachment, ChatMessage } from '@/types/chat'
+import type { ChatAttachment, ChatMessage, ChatMode } from '@/types/chat'
+import { NoteProposalCard } from '@/components/chat/note-proposal-card'
 import { AttachmentList } from '@/components/chat/attachment-list'
 
 type ChatViewProps = {
@@ -18,9 +19,13 @@ type ChatViewProps = {
   onRemoveAttachment: (id: string) => void
   onDraftChange: (value: string) => void
   onSend: () => void
+  mode: ChatMode
+  onModeChange: (mode: ChatMode) => void
+  proposalSaveDisabled: boolean
+  onResolveProposal: (id: string, action: 'save' | 'discard', title?: string, content?: string) => Promise<void>
 }
 
-export function ChatView({ messages, draft, attachments, sending, error, loading, loadError, onRetryLoad, onRetry, onAddAttachments, onRemoveAttachment, onDraftChange, onSend }: ChatViewProps) {
+export function ChatView({ messages, draft, attachments, sending, error, loading, loadError, onRetryLoad, onRetry, onAddAttachments, onRemoveAttachment, onDraftChange, onSend, mode, onModeChange, proposalSaveDisabled, onResolveProposal }: ChatViewProps) {
   const textarea = useRef<HTMLTextAreaElement>(null)
   const messageEnd = useRef<HTMLDivElement>(null)
   const composerId = useId()
@@ -39,6 +44,14 @@ export function ChatView({ messages, draft, attachments, sending, error, loading
 
   return (
     <section aria-label="Chat" className="flex min-h-0 flex-1 flex-col">
+      <div className="mx-auto flex w-full max-w-3xl shrink-0 flex-col items-center gap-2 px-5 pb-3 text-center sm:px-6">
+        <div role="group" aria-label="Chat mode" className="flex rounded-full bg-muted p-1">
+          {(['ask', 'organize'] as const).map((value) => <Button key={value} type="button" size="sm"
+            variant={mode === value ? 'secondary' : 'ghost'} className="rounded-full" aria-pressed={mode === value}
+            disabled={sending || loading || !!loadError} onClick={() => onModeChange(value)}>{value === 'ask' ? 'Ask' : 'Organize'}</Button>)}
+        </div>
+        <p className="text-xs text-muted-foreground">{mode === 'ask' ? 'Explore ideas and ask questions.' : 'Turn pasted text into a note for your approval.'}</p>
+      </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-5 sm:px-6">
         {loading ? <p role="status" className="mx-auto max-w-3xl py-8 text-sm text-muted-foreground">Loading chat history…</p>
         : loadError ? <p className="mx-auto max-w-3xl py-8 text-sm text-muted-foreground">Retry below to restore your saved conversation.</p>
@@ -60,6 +73,9 @@ export function ChatView({ messages, draft, attachments, sending, error, loading
                     <div className={message.content ? 'mb-2' : ''}><AttachmentList attachments={message.attachments} /></div>
                   )}
                   {message.content && <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{message.content}</p>}
+                  {message.role === 'user' && message.mode === 'organize' && <p className="mt-1 text-xs text-muted-foreground">Organize</p>}
+                  {message.proposal && <NoteProposalCard proposal={message.proposal} disabled={proposalSaveDisabled}
+                    onResolve={(action, title, content) => onResolveProposal(message.id, action, title, content)} />}
                 </div>
               </li>
             ))}
@@ -105,7 +121,7 @@ export function ChatView({ messages, draft, attachments, sending, error, loading
             }} />
           <label htmlFor={composerId} className="sr-only">Message</label>
           <textarea ref={textarea} id={composerId} value={draft} rows={1}
-            placeholder="Write a message…"
+            placeholder={mode === 'ask' ? 'Write a message…' : 'Paste information to organize…'}
             onChange={(event) => onDraftChange(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {

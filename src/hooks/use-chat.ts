@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { createConversation, deleteConversation, renameConversation, loadChatHistory, loadConversations, requestChatReply } from '@/lib/chat-api'
-import type { ChatAttachment, ChatMessage, Conversation } from '@/types/chat'
+import { createConversation, deleteConversation, renameConversation, loadChatHistory, loadConversations, requestChatReply, resolveNoteProposal } from '@/lib/chat-api'
+import type { ChatAttachment, ChatMessage, ChatMode, Conversation } from '@/types/chat'
 
-type PendingMessage = { id: string; content: string }
+type PendingMessage = { id: string; content: string; mode: ChatMode }
 type ChatSession = {
   messages: ChatMessage[]
   draft: string
@@ -14,10 +14,11 @@ type ChatSession = {
   loaded: boolean
   persisted: boolean
   pending: PendingMessage | null
+  mode: ChatMode
 }
 
 const emptySession = (): ChatSession => ({
-  messages: [], draft: '', attachments: [], sending: false, error: '', loading: false, loadError: '', loaded: true, persisted: false, pending: null,
+  messages: [], draft: '', attachments: [], sending: false, error: '', loading: false, loadError: '', loaded: true, persisted: false, pending: null, mode: 'ask',
 })
 
 function mergeConversations(current: Conversation[], incoming: Conversation[]) {
@@ -93,7 +94,8 @@ export function useChat() {
       updateSession(id, (session) => ({
         ...session, messages: history.map((message) => ({ ...message, attachments: [] })),
         loading: false, loaded: true, persisted: true,
-        pending: last?.role === 'user' ? { id: last.id, content: last.content } : null,
+        mode: last?.mode ?? 'ask',
+        pending: last?.role === 'user' ? { id: last.id, content: last.content, mode: last.mode ?? 'ask' } : null,
         error: last?.role === 'user' ? 'This message has no saved reply yet. Retry to continue.' : '',
       }))
       void refreshConversations()
@@ -136,9 +138,9 @@ export function useChat() {
     const session = currentSessions.current[id] ?? emptySession()
     const content = session.draft.trim()
     if (session.loading || session.loadError || session.sending || (!content && session.attachments.length === 0)) return
-    const message: ChatMessage = { id: crypto.randomUUID(), role: 'user', content, attachments: session.attachments }
+    const message: ChatMessage = { id: crypto.randomUUID(), role: 'user', content, attachments: session.attachments, mode: session.mode }
     updateSession(id, (current) => ({ ...current, messages: [...current.messages, message], draft: '', attachments: [] }))
-    if (content) void getReply(id, { id: message.id, content })
+    if (content) void getReply(id, { id: message.id, content, mode: session.mode })
   }
 
   function activate(id: string) {
@@ -178,6 +180,13 @@ export function useChat() {
   return {
     ...session, activeConversationId, conversations, conversationsLoading, conversationsError, sendMessage, renameChat, deleteChat, chatMutationError,
     newChat: () => activate(crypto.randomUUID()),
+    setMode: (mode: ChatMode) => updateSession(activeId.current, (current) => ({ ...current, mode })),
+    resolveProposal: async (messageId: string, action: 'save' | 'discard', title?: string, content?: string) => {
+      const id = activeId.current
+      const result = await resolveNoteProposal(id, messageId, action, title, content)
+      updateSession(id, (current) => ({ ...current, messages: current.messages.map((message) => message.id === messageId ? { ...result.message, attachments: [] } : message) }))
+      return result.note
+    },
     selectConversation: (id: string) => { activate(id); void loadConversation(id) },
     setDraft: (draft: string) => updateSession(activeId.current, (current) => ({ ...current, draft })),
     addAttachments: (files: File[]) => updateSession(activeId.current, (current) => ({

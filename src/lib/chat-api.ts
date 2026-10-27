@@ -1,4 +1,5 @@
-import type { Conversation, StoredChatMessage } from '@/types/chat'
+import type { ChatMode, Conversation, StoredChatMessage } from '@/types/chat'
+import type { Note } from '@/types/note'
 
 async function chatRequest(path: string, message?: unknown, method = message ? 'POST' : 'GET') {
   let response: Response
@@ -42,10 +43,14 @@ export async function createConversation(id: string): Promise<Conversation> {
   return chatRequest('/conversations', { id })
 }
 
-export async function requestChatReply(message: { id: string; content: string; conversationId: string }): Promise<StoredChatMessage> {
+export async function requestChatReply(message: { id: string; content: string; conversationId: string; mode?: ChatMode }): Promise<StoredChatMessage> {
   const data = await chatRequest('', message)
   if (typeof data?.content !== 'string' || !data.content.trim() || data.role !== 'assistant' || typeof data.id !== 'string') {
     throw new Error('The server returned an unreadable reply. Please retry.')
   }
   return data
+}
+
+export async function resolveNoteProposal(conversationId: string, messageId: string, action: 'save' | 'discard', title?: string, content?: string): Promise<{ message: StoredChatMessage; note: Note | null }> {
+  return chatRequest(`/conversations/${encodeURIComponent(conversationId)}/proposals/${encodeURIComponent(messageId)}`, { action, title, content })
 }

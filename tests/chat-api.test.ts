@@ -7,6 +7,7 @@ import { test } from 'node:test'
 import { createChatApi } from '../server/chat-api.ts'
 import { generateConversationTitle } from '../server/openai.ts'
 import { ChatStore } from '../server/chat-store.ts'
+import { NotesStore } from '../server/notes-store.ts'
 
 async function withApi(store: ChatStore, fetcher: typeof fetch, run: (base: string) => Promise<void>, titleGenerator: typeof generateConversationTitle = async () => { throw new Error('Title unavailable in this fixture') }) {
   const server = createServer(createChatApi({ apiKey: 'test-secret', model: 'test-model', fetcher, titleGenerator }, store))
@@ -23,6 +24,107 @@ async function withApi(store: ChatStore, fetcher: typeof fetch, run: (base: stri
 const reply = (text: string) => Response.json({ status: 'completed', output: [{ type: 'message', content: [{ type: 'output_text', text }] }] })
 const post = (url: string, body: unknown, origin?: string) => fetch(url, {
   method: 'POST', headers: { 'Content-Type': 'application/json', ...(origin ? { Origin: origin } : {}) }, body: JSON.stringify(body),
+})
+
+test('Organize proposes without writing notes; edited approval is persistent, scoped, and retry safe', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'knowledge-manager-organize-'))
+  const path = join(directory, 'workspace.sqlite')
+  const notes = new NotesStore(path)
+  let store = new ChatStore(path)
+  let modelCalls = 0
+  const fetcher: typeof fetch = async (_url, init) => {
+    modelCalls++
+    const body = JSON.parse(init?.body as string)
+    assert.equal(body.text.format.name, 'note_proposal')
+    assert.equal(body.text.format.strict, true)
+    assert.equal(body.store, false)
+    return reply(JSON.stringify({ title: 'Study notes', content: 'Review databases.\nPractice transactions.' }))
+  }
+  try {
+    let proposalId = ''
+    await withApi(store, fetcher, async (url) => {
+      await post(`${url}/conversations`, { id: 'organize-chat' })
+      await post(`${url}/conversations`, { id: 'other-chat' })
+      const input = { id: 'organize-user', content: 'db study. practice transactions', conversationId: 'organize-chat', mode: 'organize' }
+      const response = await post(url, input)
+      assert.equal(response.status, 200)
+      const message = await response.json() as { id: string; mode: string; proposal: { status: string } }
+      proposalId = message.id
+      assert.equal(message.mode, 'organize')
+      assert.equal(message.proposal.status, 'pending')
+      assert.deepEqual(notes.loadNotes(), [])
+      assert.deepEqual(await (await post(url, input)).json(), message)
+      assert.equal(modelCalls, 1)
+      assert.equal((await post(url, { ...input, mode: 'ask' })).status, 409)
+      const approval = { action: 'save', title: 'My revised plan', content: 'Review SQLite.\n\nPractice transactions twice.' }
+      assert.equal((await post(`${url}/conversations/other-chat/proposals/${proposalId}`, approval)).status, 404)
+      const route = `${url}/conversations/organize-chat/proposals/${proposalId}`
+      assert.equal((await post(route, approval, 'https://unrelated.example')).status, 403)
+      assert.equal((await post(route, { ...approval, content: ' ' })).status, 400)
+      assert.equal((await post(route, { ...approval, action: 'auto-save' })).status, 400)
+      assert.deepEqual(notes.loadNotes(), [])
+    })
+    store.close()
+    store = new ChatStore(path)
+    assert.equal(store.loadMessages('organize-chat')[0].mode, 'organize')
+    assert.equal(store.loadMessages('organize-chat')[1].proposal?.status, 'pending')
+    await withApi(store, fetcher, async (url) => {
+      const route = `${url}/conversations/organize-chat/proposals/${proposalId}`
+      const approval = { action: 'save', title: 'My revised plan', content: 'Review SQLite.\n\nPractice transactions twice.' }
+      const first = await post(route, approval)
+      assert.equal(first.status, 200)
+      const saved = await first.json() as { note: { id: string }; message: { proposal: { status: string } } }
+      assert.equal(saved.message.proposal.status, 'saved')
+      assert.deepEqual(await (await post(route, approval)).json(), saved)
+      assert.equal(notes.loadNotes().length, 1)
+      const note = notes.loadNotes()[0]
+      assert.equal(note.title, approval.title)
+      assert.equal(note.folderId, null)
+      assert.equal(note.content.content?.length, 3)
+      notes.updateNote(note.id, { title: 'Later edit' })
+      await post(route, approval)
+      assert.equal(notes.loadNotes()[0].title, 'Later edit')
+      assert.equal((await post(route, { action: 'discard' })).status, 409)
+      assert.equal(modelCalls, 1)
+      const next = await post(url, { id: 'discard-user', content: 'Another draft', mode: 'organize', conversationId: 'organize-chat' })
+      const draft = await next.json() as { id: string }
+      const discardRoute = `${url}/conversations/organize-chat/proposals/${draft.id}`
+      assert.equal((await post(discardRoute, { action: 'discard' })).status, 200)
+      assert.equal((await post(discardRoute, { action: 'discard' })).status, 200)
+      assert.equal((await post(discardRoute, approval)).status, 409)
+      assert.equal(notes.loadNotes().length, 1)
+    })
+    store.close()
+    store = new ChatStore(path)
+    assert.equal(store.loadMessages('organize-chat')[1].proposal?.status, 'saved')
+    assert.equal(store.loadMessages('organize-chat')[3].proposal?.status, 'discarded')
+  } finally { store.close(); notes.close(); await rm(directory, { recursive: true, force: true }) }
+})
+
+test('invalid Organize output leaves a retryable message with its original mode; Ask returns text', async () => {
+  const store = new ChatStore(':memory:')
+  let invalid = true
+  try {
+    await withApi(store, async (_url, init) => {
+      const body = JSON.parse(init?.body as string)
+      if (!body.text) return reply('Ask answer')
+      return reply(invalid ? 'not valid JSON' : JSON.stringify({ title: 'Valid title', content: 'Valid content' }))
+    }, async (url) => {
+      const input = { id: 'retry-organize', content: 'Organize this', mode: 'organize' }
+      assert.equal((await post(url, { ...input, mode: 'unknown' })).status, 400)
+      assert.equal((await post(url, input)).status, 502)
+      assert.equal(store.loadMessages().length, 1)
+      assert.equal(store.loadMessages()[0].mode, 'organize')
+      assert.equal((await post(url, { ...input, mode: 'ask' })).status, 409)
+      invalid = false
+      assert.equal((await post(url, input)).status, 200)
+      assert.equal(store.loadMessages()[1].proposal?.status, 'pending')
+      const response = await post(url, { id: 'ask-next', content: 'Explain more', mode: 'ask' })
+      const answer = await response.json() as { content: string; proposal?: unknown }
+      assert.equal(answer.content, 'Ask answer')
+      assert.equal(answer.proposal, undefined)
+    })
+  } finally { store.close() }
 })
 
 test('greetings defer titles; later requests and existing chats use the developing topic', async () => {

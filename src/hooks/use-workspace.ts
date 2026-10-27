@@ -134,6 +134,12 @@ export function useWorkspace() {
   return {
     ...workspace, loading, loadError, saveStatus, createNote, updateNote, deleteNote, moveNote,
     createFolder, renameFolder, deleteFolder,
+    includeSavedNote: (note: Note) => {
+      if (current.current.notes.some((item) => item.id === note.id)) return
+      const next = { ...current.current, notes: [note, ...current.current.notes].sort((a, b) => b.createdAt - a.createdAt) }
+      current.current = next
+      setWorkspace(next)
+    },
     retryLoad: () => {
       setLoading(true)
       setLoadError(false)
