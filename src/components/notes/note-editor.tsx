@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { EditorContent, useEditor, useEditorState } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import { Bold, Heading2, Italic, List, ListOrdered } from 'lucide-react'
@@ -6,23 +7,29 @@ import type { Note } from '@/types/note'
 
 type NoteEditorProps = {
   content: Note['content']
-  onChange: (content: Note['content']) => void
+  onChange?: (content: Note['content']) => void
+  editable?: boolean
+  label?: string
 }
 
-export function NoteEditor({ content, onChange }: NoteEditorProps) {
+export function NoteEditor({ content, onChange, editable = true, label = 'Note content' }: NoteEditorProps) {
   const editor = useEditor({
     extensions: [StarterKit.configure({ heading: { levels: [2] } })],
     content,
+    editable,
     editorProps: {
       attributes: {
         class: 'note-editor min-h-64 py-3 leading-7 outline-none',
         role: 'textbox',
-        'aria-label': 'Note content',
+        'aria-label': label,
         'aria-multiline': 'true',
+        'aria-readonly': String(!editable),
       },
     },
-    onUpdate: ({ editor }) => onChange(editor.getJSON()),
+    onUpdate: ({ editor }) => onChange?.(editor.getJSON()),
   })
+
+  useEffect(() => { editor?.setEditable(editable, false) }, [editor, editable])
 
   const active = useEditorState({
     editor,
@@ -47,7 +54,7 @@ export function NoteEditor({ content, onChange }: NoteEditorProps) {
 
   return (
     <div className="mt-5">
-      <div role="group" aria-label="Text formatting" className="mb-3 inline-flex max-w-full flex-wrap gap-1 rounded-xl bg-muted/55 p-1 text-muted-foreground">
+      {editable ? <div role="group" aria-label="Text formatting" className="mb-3 inline-flex max-w-full flex-wrap gap-1 rounded-xl bg-muted/55 p-1 text-muted-foreground">
         {actions.map(({ label, icon: Icon, active, run }) => (
           <Button
             key={label}
@@ -62,7 +69,7 @@ export function NoteEditor({ content, onChange }: NoteEditorProps) {
             <Icon aria-hidden="true" />
           </Button>
         ))}
-      </div>
+      </div> : <div className="mb-3 flex min-h-11 items-center text-xs text-muted-foreground">Read-only</div>}
       <EditorContent editor={editor} />
     </div>
   )

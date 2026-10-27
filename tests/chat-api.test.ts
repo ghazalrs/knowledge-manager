@@ -8,6 +8,7 @@ import { createChatApi } from '../server/chat-api.ts'
 import { generateConversationTitle } from '../server/openai.ts'
 import { ChatStore } from '../server/chat-store.ts'
 import { NotesStore } from '../server/notes-store.ts'
+import type { StoredChatMessage } from '../src/types/chat.ts'
 
 async function withApi(store: ChatStore, fetcher: typeof fetch, run: (base: string) => Promise<void>, titleGenerator: typeof generateConversationTitle = async () => { throw new Error('Title unavailable in this fixture') }) {
   const server = createServer(createChatApi({ apiKey: 'test-secret', model: 'test-model', fetcher, titleGenerator }, store))
@@ -26,6 +27,59 @@ const post = (url: string, body: unknown, origin?: string) => fetch(url, {
   method: 'POST', headers: { 'Content-Type': 'application/json', ...(origin ? { Origin: origin } : {}) }, body: JSON.stringify(body),
 })
 
+test('Try again reopens the exact discarded preview after restart without AI calls or note changes', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'knowledge-manager-proposal-reopen-'))
+  const path = join(directory, 'workspace.sqlite')
+  const notes = new NotesStore(path)
+  let store = new ChatStore(path)
+  let calls = 0
+  const original = { id: 'retry-note', title: 'SQLite', content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'SQLite original facts.' }] }] }, folderId: null, createdAt: 1 }
+  notes.createNote(original)
+  const fetcher: typeof fetch = async () => {
+    calls++
+    return reply(JSON.stringify({ action: 'update', targetNoteId: original.id, title: 'SQLite transactions', content: 'A proposed update.', reason: 'Same database topic.' }))
+  }
+  const document = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'My edited preview.', marks: [{ type: 'bold' }] }] }] }
+  let discarded!: StoredChatMessage
+  try {
+    await withApi(store, fetcher, async (url) => {
+      await post(`${url}/conversations`, { id: 'redo-chat' })
+      const response = await post(url, { id: 'redo-source', content: 'Add SQLite transaction facts.', mode: 'organize', conversationId: 'redo-chat' })
+      assert.equal(response.status, 200)
+      const proposal = await response.json() as StoredChatMessage
+      const result = await post(`${url}/conversations/redo-chat/proposals/${proposal.id}`, { action: 'discard', title: 'My edited title', content: 'My edited preview.', document })
+      assert.equal(result.status, 200)
+      discarded = (await result.json() as { message: StoredChatMessage }).message
+    })
+    notes.updateNote(original.id, { title: 'Changed since the preview' })
+    const latest = notes.loadNotes()
+    store.close()
+    store = new ChatStore(path)
+    await withApi(store, fetcher, async (url) => {
+      const route = `${url}/conversations/redo-chat/proposals/${discarded.id}`
+      const response = await post(route, { action: 'reopen' })
+      assert.equal(response.status, 200)
+      const reopened = (await response.json() as { message: StoredChatMessage; note: unknown })
+      assert.equal(reopened.note, null)
+      assert.equal(reopened.message.id, discarded.id)
+      assert.deepEqual(reopened.message.proposal, { ...discarded.proposal, status: 'pending' })
+      assert.deepEqual(reopened.message.proposal?.document, document)
+      assert.deepEqual(reopened.message.proposal?.originalNote, original)
+      assert.equal(reopened.message.proposal?.action, 'update')
+      assert.equal(store.loadMessages('redo-chat').length, 2)
+      assert.equal(calls, 1)
+      assert.deepEqual(notes.loadNotes(), latest)
+      assert.deepEqual((await (await post(route, { action: 'reopen' })).json() as { message: StoredChatMessage }).message, reopened.message)
+      assert.equal((await post(route, { action: 'save', title: 'My edited title', content: 'My edited preview.', document })).status, 409)
+      assert.deepEqual(notes.loadNotes(), latest)
+      notes.updateNote(original.id, { title: original.title })
+      assert.equal((await post(route, { action: 'save', title: 'My edited title', content: 'My edited preview.', document })).status, 200)
+      assert.deepEqual(notes.loadNotes()[0].content, document)
+      assert.equal((await post(route, { action: 'reopen' })).status, 409)
+    })
+  } finally { store.close(); notes.close(); await rm(directory, { recursive: true, force: true }) }
+})
+
 test('Organize proposes without writing notes; edited approval is persistent, scoped, and retry safe', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'knowledge-manager-organize-'))
   const path = join(directory, 'workspace.sqlite')
@@ -38,7 +92,7 @@ test('Organize proposes without writing notes; edited approval is persistent, sc
     assert.equal(body.text.format.name, 'note_proposal')
     assert.equal(body.text.format.strict, true)
     assert.equal(body.store, false)
-    return reply(JSON.stringify({ title: 'Study notes', content: 'Review databases.\nPractice transactions.' }))
+    return reply(JSON.stringify({ title: 'Study notes', content: 'Review databases.\nPractice transactions.', action: 'create', targetNoteId: null, reason: 'A new study plan.' }))
   }
   try {
     let proposalId = ''
@@ -108,7 +162,7 @@ test('invalid Organize output leaves a retryable message with its original mode;
     await withApi(store, async (_url, init) => {
       const body = JSON.parse(init?.body as string)
       if (!body.text) return reply('Ask answer')
-      return reply(invalid ? 'not valid JSON' : JSON.stringify({ title: 'Valid title', content: 'Valid content' }))
+      return reply(invalid ? 'not valid JSON' : JSON.stringify({ title: 'Valid title', content: 'Valid content', action: 'create', targetNoteId: null, reason: 'New information.' }))
     }, async (url) => {
       const input = { id: 'retry-organize', content: 'Organize this', mode: 'organize' }
       assert.equal((await post(url, { ...input, mode: 'unknown' })).status, 400)
@@ -375,4 +429,61 @@ test('a successful AI title is stored and a failed title keeps the first-message
       assert.equal(saved.titleState, 'failed')
     })
   } finally { store.close() }
+})
+
+
+test('Organize retrieves related notes and proposes a scoped update; Ask does not send saved notes', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'knowledge-manager-related-api-'))
+  const path = join(directory, 'workspace.sqlite')
+  const notes = new NotesStore(path)
+  const store = new ChatStore(path)
+  const original = { id: 'sqlite-topic', title: 'SQLite reference', content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'SQLite stores local data.' }] }] }, folderId: null, createdAt: 1 }
+  notes.createNote(original)
+  notes.createNote({ ...original, id: 'private-travel', title: 'Travel', content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'A fictional private itinerary.' }] }] } })
+  let target = original.id
+  try {
+    await withApi(store, async (_url, init) => {
+      const request = JSON.parse(init?.body as string)
+      if (!request.text) {
+        assert.ok(!JSON.stringify(request.input).includes('SQLite stores local data.'))
+        return reply('An explanation')
+      }
+      const context = JSON.stringify(request.input)
+      assert.ok(context.includes('SQLite stores local data.'))
+      assert.ok(!context.includes('fictional private itinerary'))
+      return reply(JSON.stringify({ action: 'update', targetNoteId: target, title: 'SQLite transactions', content: 'SQLite stores local data. Transactions are atomic.', reason: 'The existing SQLite note covers the same topic.' }))
+    }, async (url) => {
+      await post(`${url}/conversations`, { id: 'related-chat' })
+      const response = await post(url, { id: 'related-user', content: 'SQLite transactions are atomic', mode: 'organize', conversationId: 'related-chat' })
+      assert.equal(response.status, 200)
+      const message = await response.json() as { id: string; proposal: { action: string; originalNote: typeof original; relatedNotes: { id: string }[] } }
+      assert.equal(message.proposal.action, 'update')
+      assert.deepEqual(message.proposal.originalNote, original)
+      assert.deepEqual(message.proposal.relatedNotes, [{ id: original.id, title: original.title }])
+      assert.deepEqual(notes.loadNotes().find((note) => note.id === original.id), original)
+      const route = `${url}/conversations/related-chat/proposals/${message.id}`
+      const document = { type: 'doc', content: [
+        { type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: 'SQLite' }] },
+        { type: 'paragraph', content: [{ type: 'text', text: 'Transactions are atomic.', marks: [{ type: 'bold' }] }] },
+        { type: 'bulletList', content: [{ type: 'listItem', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Practice transactions' }] }] }] },
+      ] }
+      assert.equal((await post(route, { action: 'save', title: 'SQLite transactions', content: 'Text', document: { type: 'doc', content: [{ type: 'unknown' }] } })).status, 400)
+      assert.deepEqual(notes.loadNotes().find((note) => note.id === original.id), original)
+      const approval = { action: 'save', title: 'SQLite transactions', content: 'Plain text preview', document }
+      assert.equal((await post(route, approval)).status, 200)
+      assert.equal(notes.loadNotes().length, 2)
+      assert.deepEqual(notes.loadNotes().find((note) => note.id === original.id)?.content, document)
+      const savedMessage = store.loadMessages('related-chat').find((item) => item.id === message.id)!
+      assert.deepEqual(savedMessage.proposal?.document, document)
+      assert.equal(savedMessage.proposal?.content, 'SQLite\nTransactions are atomic.\nPractice transactions')
+      assert.equal((await post(route, approval)).status, 200)
+      assert.deepEqual(notes.loadNotes().find((note) => note.id === original.id)?.content, document)
+      assert.equal((await post(route, { action: 'undo' })).status, 200)
+      assert.deepEqual(notes.loadNotes().find((note) => note.id === original.id), original)
+      target = 'private-travel'
+      assert.equal((await post(url, { id: 'invalid-target', content: 'More SQLite transactions', mode: 'organize', conversationId: 'related-chat' })).status, 502)
+      await post(`${url}/conversations`, { id: 'ask-only' })
+      assert.equal((await post(url, { id: 'ask-user', content: 'Explain SQLite transactions', mode: 'ask', conversationId: 'ask-only' })).status, 200)
+    })
+  } finally { store.close(); notes.close(); await rm(directory, { recursive: true, force: true }) }
 })

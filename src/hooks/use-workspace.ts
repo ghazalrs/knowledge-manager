@@ -135,8 +135,10 @@ export function useWorkspace() {
     ...workspace, loading, loadError, saveStatus, createNote, updateNote, deleteNote, moveNote,
     createFolder, renameFolder, deleteFolder,
     includeSavedNote: (note: Note) => {
-      if (current.current.notes.some((item) => item.id === note.id)) return
-      const next = { ...current.current, notes: [note, ...current.current.notes].sort((a, b) => b.createdAt - a.createdAt) }
+      if (pending.current.some((change) => (change.type === 'note-delete' && change.id === note.id)
+        || (change.type === 'folder-delete' && change.id === note.folderId))) return
+      const merged = pending.current.reduce((value, change) => change.type === 'note-update' && change.id === note.id ? { ...value, ...change.changes } : value, note)
+      const next = { ...current.current, notes: [merged, ...current.current.notes.filter((item) => item.id !== note.id)].sort((a, b) => b.createdAt - a.createdAt) }
       current.current = next
       setWorkspace(next)
     },

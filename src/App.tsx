@@ -25,7 +25,7 @@ function App() {
     loading: chatLoading, loadError: chatLoadError, retryLoad: retryChatLoad,
     conversations, activeConversationId, newChat, selectConversation, renameChat, deleteChat, chatMutationError,
     conversationsLoading, conversationsError, retryConversations,
-    mode: chatMode, setMode: setChatMode, resolveProposal,
+    mode: chatMode, setMode: setChatMode, resolveProposal, retryProposal,
   } = useChat()
 
   const {
@@ -125,7 +125,7 @@ function App() {
   }
 
   return (
-    <div className={`flex bg-background text-foreground ${activeView === 'chat' ? 'h-svh overflow-hidden' : 'min-h-svh'}`}>
+    <div className={`flex bg-background text-foreground ${activeView === 'chat' ? 'fixed inset-0 h-dvh overflow-hidden' : 'min-h-svh'}`}>
       {sidebarOpen && (
         <DesktopSidebar>
           <div className="flex h-16 shrink-0 items-center justify-between gap-2 px-4">
@@ -182,12 +182,13 @@ function App() {
             <Button variant="outline" onClick={retrySave}>Retry save</Button>
           </div>
         )}
-        <main className={activeView === 'chat' ? 'flex min-h-0 flex-1 flex-col' : selectedNote ? 'flex-1 px-6 py-8 sm:px-8 sm:py-12' : 'flex-1 px-5 pb-12 pt-4 sm:px-8 sm:pt-6 lg:px-12'}>
+        <main className={activeView === 'chat' ? 'flex min-h-0 flex-1 flex-col overflow-hidden' : selectedNote ? 'flex-1 px-6 py-8 sm:px-8 sm:py-12' : 'flex-1 px-5 pb-12 pt-4 sm:px-8 sm:pt-6 lg:px-12'}>
           {activeView === 'chat' ? (
             <ChatView key={activeConversationId} messages={chatMessages} draft={chatDraft} attachments={chatAttachments}
-              mode={chatMode} onModeChange={setChatMode} proposalSaveDisabled={loading || loadError}
-              onResolveProposal={async (id, action, title, content) => {
-                const note = await resolveProposal(id, action, title, content)
+              mode={chatMode} onModeChange={setChatMode} proposalSaveDisabled={loading || loadError || saveStatus !== 'saved'}
+              onRetryProposal={retryProposal}
+              onResolveProposal={async (id, action, title, content, document) => {
+                const note = await resolveProposal(id, action, title, content, document)
                 if (note) includeSavedNote(note)
               }}
               sending={chatSending} error={chatError} onRetry={retryChat}

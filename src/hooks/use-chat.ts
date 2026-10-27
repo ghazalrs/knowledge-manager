@@ -148,6 +148,16 @@ export function useChat() {
     setActiveConversationId(id)
   }
 
+  async function retryProposal(proposalId: string) {
+    const id = activeId.current
+    const session = currentSessions.current[id]
+    if (!session || session.loading || session.loadError || session.sending || deletedIds.current.has(id)) {
+      throw new Error('Wait for this chat to finish loading or replying, then try again.')
+    }
+    const result = await resolveNoteProposal(id, proposalId, 'reopen')
+    updateSession(id, (current) => ({ ...current, mode: 'organize', messages: current.messages.map((message) => message.id === proposalId ? { ...result.message, attachments: [] } : message) }))
+  }
+
   async function renameChat(id: string, title: string) {
     setChatMutationError('')
     try {
@@ -178,12 +188,12 @@ export function useChat() {
 
   const session = sessions[activeConversationId] ?? emptySession()
   return {
-    ...session, activeConversationId, conversations, conversationsLoading, conversationsError, sendMessage, renameChat, deleteChat, chatMutationError,
+    ...session, activeConversationId, conversations, conversationsLoading, conversationsError, sendMessage, renameChat, deleteChat, chatMutationError, retryProposal,
     newChat: () => activate(crypto.randomUUID()),
     setMode: (mode: ChatMode) => updateSession(activeId.current, (current) => ({ ...current, mode })),
-    resolveProposal: async (messageId: string, action: 'save' | 'discard', title?: string, content?: string) => {
+    resolveProposal: async (messageId: string, action: 'save' | 'discard' | 'undo' | 'reopen', title?: string, content?: string, document?: import('@/types/note').Note['content']) => {
       const id = activeId.current
-      const result = await resolveNoteProposal(id, messageId, action, title, content)
+      const result = await resolveNoteProposal(id, messageId, action, title, content, document)
       updateSession(id, (current) => ({ ...current, messages: current.messages.map((message) => message.id === messageId ? { ...result.message, attachments: [] } : message) }))
       return result.note
     },

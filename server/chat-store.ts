@@ -1,8 +1,10 @@
 import { DatabaseSync } from 'node:sqlite'
 import { randomUUID } from 'node:crypto'
-import type { ChatMode, Conversation, NoteProposal, StoredChatMessage } from '../src/types/chat.ts'
+import type { ChatMode, Conversation, NoteProposal, ProposalAction, StoredChatMessage } from '../src/types/chat.ts'
 import type { Note } from '../src/types/note.ts'
 import { RequestError } from './api.ts'
+import { noteText, textDocument } from '../src/lib/note-text.ts'
+import { findRelatedNotes } from './related-notes.ts'
 
 export class ChatStore {
   private db: DatabaseSync
@@ -39,13 +41,42 @@ export class ChatStore {
     const messageColumns = this.db.prepare('PRAGMA table_info(chat_messages)').all()
     if (!messageColumns.some((column) => column.name === 'mode')) this.db.exec("ALTER TABLE chat_messages ADD COLUMN mode TEXT NOT NULL DEFAULT 'ask'")
     if (!messageColumns.some((column) => column.name === 'proposal')) this.db.exec('ALTER TABLE chat_messages ADD COLUMN proposal TEXT')
+    this.db.exec(`CREATE TABLE IF NOT EXISTS note_revisions (
+      id TEXT PRIMARY KEY,
+      noteId TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+      proposalMessageId TEXT NOT NULL UNIQUE,
+      beforeNote TEXT NOT NULL,
+      afterNote TEXT NOT NULL,
+      createdAt INTEGER NOT NULL,
+      undone INTEGER NOT NULL DEFAULT 0
+    )`)
     this.db.prepare('INSERT INTO conversations (id, title, createdAt) VALUES (?, ?, ?) ON CONFLICT(id) DO NOTHING')
       .run('main', 'Chat', Date.now())
   }
 
+  private note(row: Record<string, unknown>): Note {
+    return { id: row.id as string, title: row.title as string, content: JSON.parse(row.content as string), folderId: row.folderId as string | null, createdAt: row.createdAt as number }
+  }
+
+  relatedNotes(query: string) {
+    if (!this.db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'notes'").get()) return []
+    return findRelatedNotes(this.db.prepare('SELECT * FROM notes').all().map((row) => this.note(row)), query)
+  }
+
+  private currentNote(id: string): Note | null {
+    const row = this.db.prepare('SELECT * FROM notes WHERE id = ?').get(id)
+    return row ? this.note(row) : null
+  }
+
+  private matchesNote(current: Note | null, expected: Note) {
+    return current !== null && current.title === expected.title && current.folderId === expected.folderId
+      && JSON.stringify(current.content) === JSON.stringify(expected.content)
+  }
+
   private message(row: Record<string, unknown>): StoredChatMessage {
     return { id: row.id as string, role: row.role as StoredChatMessage['role'], content: row.content as string, createdAt: row.createdAt as number,
-      mode: (row.mode ?? 'ask') as ChatMode, ...(typeof row.proposal === 'string' ? { proposal: JSON.parse(row.proposal) as NoteProposal } : {}) }
+      mode: (row.mode ?? 'ask') as ChatMode, ...(typeof row.proposal === 'string' ? { proposal: JSON.parse(row.proposal) as NoteProposal } : {}),
+      ...(typeof row.replyTo === 'string' ? { replyTo: row.replyTo } : {}) }
   }
 
   listConversations(): Conversation[] {
@@ -118,7 +149,7 @@ export class ChatStore {
     return this.findReply(userId, conversationId)!
   }
 
-  resolveProposal(conversationId: string, messageId: string, action: 'save' | 'discard', title?: string, content?: string): { message: StoredChatMessage; note: Note | null } {
+  resolveProposal(conversationId: string, messageId: string, action: ProposalAction, title?: string, content?: string, document?: Note['content']): { message: StoredChatMessage; note: Note | null } {
     this.db.exec('BEGIN IMMEDIATE')
     try {
       const row = this.db.prepare("SELECT * FROM chat_messages WHERE id = ? AND conversationId = ? AND role = 'assistant'").get(messageId, conversationId)
@@ -126,18 +157,49 @@ export class ChatStore {
       const message = this.message(row)
       const proposal = message.proposal!
       let note: Note | null = null
-      if (proposal.status === 'saved') {
+      if (action === 'reopen') {
+        if (proposal.status !== 'discarded' && proposal.status !== 'pending') throw new RequestError(409, 'Only discarded proposals can be reopened.')
+        if (proposal.status === 'discarded') {
+          message.proposal = { ...proposal, status: 'pending' }
+          this.db.prepare('UPDATE chat_messages SET proposal = ? WHERE id = ?').run(JSON.stringify(message.proposal), messageId)
+        }
+      } else if (action === 'undo') {
+        if (proposal.action !== 'update' || !['saved', 'undone'].includes(proposal.status)) throw new RequestError(409, 'Only a saved update can be undone.')
+        const revision = this.db.prepare('SELECT * FROM note_revisions WHERE proposalMessageId = ?').get(messageId)
+        if (!revision) throw new RequestError(404, 'The original version is unavailable.')
+        const before = JSON.parse(revision.beforeNote as string) as Note
+        const after = JSON.parse(revision.afterNote as string) as Note
+        note = this.currentNote(after.id)
+        if (!revision.undone) {
+          if (!this.matchesNote(note, after)) throw new RequestError(409, 'This note changed or was deleted after the update. Undo would overwrite later changes.')
+          this.db.prepare('UPDATE notes SET title = ?, content = ? WHERE id = ?').run(before.title, JSON.stringify(before.content), before.id)
+          this.db.prepare('UPDATE note_revisions SET undone = 1 WHERE proposalMessageId = ?').run(messageId)
+          note = before
+          message.proposal = { ...proposal, status: 'undone' }
+          this.db.prepare('UPDATE chat_messages SET proposal = ? WHERE id = ?').run(JSON.stringify(message.proposal), messageId)
+        }
+      } else if (proposal.status === 'undone') {
+        throw new RequestError(409, 'This update was undone. Submit a new request to propose another change.')
+      } else if (proposal.status === 'saved') {
         if (action !== 'save') throw new RequestError(409, 'This proposal has already been saved.')
-        const saved = this.db.prepare('SELECT * FROM notes WHERE id = ?').get(proposal.noteId!)
-        if (saved) note = { id: saved.id as string, title: saved.title as string, content: JSON.parse(saved.content as string), folderId: saved.folderId as string | null, createdAt: saved.createdAt as number }
+        note = this.currentNote(proposal.noteId!)
       } else if (proposal.status === 'discarded') {
         if (action !== 'discard') throw new RequestError(409, 'This proposal was discarded.')
       } else {
         if (action === 'save') {
-          note = { id: randomUUID(), title: title!, folderId: null, createdAt: Date.now(), content: { type: 'doc', content: content!.split('\n').map((line) => ({ type: 'paragraph', ...(line ? { content: [{ type: 'text', text: line }] } : {}) })) } }
-          this.db.prepare('INSERT INTO notes (id, title, content, createdAt, folderId) VALUES (?, ?, ?, ?, NULL)').run(note.id, note.title, JSON.stringify(note.content), note.createdAt)
-          message.proposal = { title: title!, content: content!, status: 'saved', noteId: note.id }
-        } else message.proposal = { ...proposal, status: 'discarded' }
+          if (proposal.action === 'update') {
+            const original = proposal.originalNote
+            if (!original || !this.matchesNote(this.currentNote(original.id), original)) throw new RequestError(409, 'This note changed or was deleted since the proposal. Discard it and request a fresh proposal.')
+            note = { ...original, title: title!, content: document ?? textDocument(content!) }
+            this.db.prepare('INSERT INTO note_revisions (id, noteId, proposalMessageId, beforeNote, afterNote, createdAt) VALUES (?, ?, ?, ?, ?, ?)')
+              .run(randomUUID(), note.id, messageId, JSON.stringify(original), JSON.stringify(note), Date.now())
+            this.db.prepare('UPDATE notes SET title = ?, content = ? WHERE id = ?').run(note.title, JSON.stringify(note.content), note.id)
+          } else {
+            note = { id: randomUUID(), title: title!, folderId: null, createdAt: Date.now(), content: document ?? textDocument(content!) }
+            this.db.prepare('INSERT INTO notes (id, title, content, createdAt, folderId) VALUES (?, ?, ?, ?, NULL)').run(note.id, note.title, JSON.stringify(note.content), note.createdAt)
+          }
+          message.proposal = { ...proposal, title: title!, content: noteText(note.content), document: note.content, status: 'saved', noteId: note.id }
+        } else message.proposal = { ...proposal, ...(document ? { title: title ?? proposal.title, content: noteText(document), document } : {}), status: 'discarded' }
         this.db.prepare('UPDATE chat_messages SET proposal = ? WHERE id = ?').run(JSON.stringify(message.proposal), messageId)
       }
       this.db.exec('COMMIT')

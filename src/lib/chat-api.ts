@@ -51,6 +51,6 @@ export async function requestChatReply(message: { id: string; content: string; c
   return data
 }
 
-export async function resolveNoteProposal(conversationId: string, messageId: string, action: 'save' | 'discard', title?: string, content?: string): Promise<{ message: StoredChatMessage; note: Note | null }> {
-  return chatRequest(`/conversations/${encodeURIComponent(conversationId)}/proposals/${encodeURIComponent(messageId)}`, { action, title, content })
+export async function resolveNoteProposal(conversationId: string, messageId: string, action: 'save' | 'discard' | 'undo' | 'reopen', title?: string, content?: string, document?: import('@/types/note').Note['content']): Promise<{ message: StoredChatMessage; note: Note | null }> {
+  return chatRequest(`/conversations/${encodeURIComponent(conversationId)}/proposals/${encodeURIComponent(messageId)}`, { action, title, content, document })
 }

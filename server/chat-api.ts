@@ -3,6 +3,7 @@ import { isLocalRequest, json, readBody, RequestError } from './api.ts'
 import { generateReply, generateConversationTitle, generateNoteProposal } from './openai.ts'
 import type { ChatStore } from './chat-store.ts'
 import type { StoredChatMessage } from '../src/types/chat.ts'
+import { validNoteDocument } from './note-document.ts'
 
 export function createChatApi(options: { apiKey?: string; model: string; fetcher?: typeof fetch; titleGenerator?: typeof generateConversationTitle }, store: ChatStore) {
   const inFlight = new Map<string, { id: string; work: Promise<StoredChatMessage> }>()
@@ -35,14 +36,18 @@ export function createChatApi(options: { apiKey?: string; model: string; fetcher
       const proposalRoute = /^\/api\/chat\/conversations\/([a-zA-Z0-9_-]{1,128})\/proposals\/([a-zA-Z0-9_-]{1,128})$/.exec(path)
       if (proposalRoute && request.method === 'POST') {
         const body = await readBody(request)
-        if (body.action !== 'save' && body.action !== 'discard') throw new RequestError(400, 'Choose Save or Discard.')
-        if (Object.keys(body).some((key) => !['action', 'title', 'content'].includes(key))
+        if (!['save', 'discard', 'undo', 'reopen'].includes(body.action as string)) throw new RequestError(400, 'Choose Save, Discard, Undo, or Try again.')
+        if (Object.keys(body).some((key) => !['action', 'title', 'content', 'document'].includes(key))
+          || (body.document !== undefined && !validNoteDocument(body.document, body.action === 'discard'))
+          || (body.title !== undefined && (typeof body.title !== 'string' || body.title.length > 200))
+          || (body.content !== undefined && (typeof body.content !== 'string' || body.content.length > 50000))
           || (body.action === 'save' && (typeof body.title !== 'string' || !body.title.trim() || body.title.length > 200
             || typeof body.content !== 'string' || !body.content.trim() || body.content.length > 50000))) {
           throw new RequestError(400, 'Provide a title (up to 200 characters) and note text (up to 50,000 characters).')
         }
-        json(response, 200, store.resolveProposal(proposalRoute[1], proposalRoute[2], body.action,
-          typeof body.title === 'string' ? body.title.trim() : undefined, typeof body.content === 'string' ? body.content.trim() : undefined))
+        json(response, 200, store.resolveProposal(proposalRoute[1], proposalRoute[2], body.action as import('../src/types/chat.ts').ProposalAction,
+          typeof body.title === 'string' ? body.title.trim() : undefined, typeof body.content === 'string' ? body.content.trim() : undefined,
+          validNoteDocument(body.document, body.action === 'discard') ? body.document : undefined))
         return
       }
       const conversationRoute = /^\/api\/chat\/conversations\/([a-zA-Z0-9_-]{1,128})$/.exec(path)
@@ -115,8 +120,8 @@ export function createChatApi(options: { apiKey?: string; model: string; fetcher
             length -= context.shift()!.content.length
           }
           const input = context.map(({ role, content: text }) => ({ role, content: text }))
-          const proposal = mode === 'organize' ? await generateNoteProposal(input, options) : undefined
-          const reply = proposal ? { content: 'Review this proposed note. Edit it, then choose Save note to add it to your workspace.' } : await generateReply(input, options)
+          const proposal = mode === 'organize' ? await generateNoteProposal(input, options, store.relatedNotes(content)) : undefined
+          const reply = proposal ? { content: proposal.action === 'update' ? 'Review the proposed update against the original note before saving.' : 'Review this proposed note. Edit it, then choose Save note to add it to your workspace.' } : await generateReply(input, options)
           if (!store.hasConversation(conversationId)) throw new RequestError(404, 'Conversation was deleted.')
           const saved = store.saveReply(id, reply.content, conversationId, proposal)
           updateTitle(conversationId)

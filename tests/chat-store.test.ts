@@ -6,6 +6,82 @@ import { test } from 'node:test'
 import { DatabaseSync } from 'node:sqlite'
 import { ChatStore } from '../server/chat-store.ts'
 import { NotesStore } from '../server/notes-store.ts'
+import { textDocument } from '../src/lib/note-text.ts'
+
+test('updates preserve versions and folder placement; stale approval and undo never overwrite later edits', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'knowledge-manager-revisions-'))
+  const path = join(directory, 'workspace.sqlite')
+  const notes = new NotesStore(path)
+  let store = new ChatStore(path)
+  const setup = new DatabaseSync(path)
+  try {
+    notes.createFolder({ id: 'learning', name: 'Learning', createdAt: 1 })
+    const original = { id: 'sqlite', title: 'SQLite notes', content: { type: 'doc', content: [{ type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: 'Original heading', marks: [{ type: 'bold' }] }] }] }, folderId: 'learning', createdAt: 1 }
+    notes.createNote(original)
+    store.createConversation('updates')
+    function propose(id: string) {
+      store.saveUserMessage(id, 'Add SQLite transactions', 'updates', 'organize')
+      return store.saveReply(id, 'Review update', 'updates', { action: 'update', title: 'SQLite transactions', content: 'Original heading\nTransactions are atomic.', status: 'pending', originalNote: notes.loadNotes()[0] })
+    }
+    const first = propose('first')
+    assert.deepEqual(notes.loadNotes(), [original])
+    store.close()
+    store = new ChatStore(path)
+    const rich = { type: 'doc', content: [
+      { type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: 'Original heading' }] },
+      { type: 'paragraph', content: [{ type: 'text', text: 'Transactions are atomic.', marks: [{ type: 'italic' }] }] },
+    ] }
+    const saved = store.resolveProposal('updates', first.id, 'save', 'Edited SQLite title', 'Original heading\nTransactions are atomic.', rich)
+    assert.equal(saved.note?.id, original.id)
+    assert.equal(saved.note?.folderId, 'learning')
+    assert.equal(saved.note?.createdAt, 1)
+    assert.equal(notes.loadNotes().length, 1)
+    assert.equal(setup.prepare('SELECT COUNT(*) AS count FROM note_revisions').get()?.count, 1)
+    store.resolveProposal('updates', first.id, 'save', 'Should not overwrite', 'Different text')
+    assert.equal(notes.loadNotes()[0].title, 'Edited SQLite title')
+    store.close()
+    store = new ChatStore(path)
+    assert.deepEqual(store.loadMessages('updates')[1].proposal?.document, rich)
+    assert.deepEqual(notes.loadNotes()[0].content, rich)
+    const restored = store.resolveProposal('updates', first.id, 'undo')
+    assert.deepEqual(restored.note, original)
+    assert.deepEqual(notes.loadNotes(), [original])
+    assert.equal(restored.message.proposal?.status, 'undone')
+    assert.deepEqual(store.resolveProposal('updates', first.id, 'undo').note, original)
+    assert.throws(() => store.resolveProposal('updates', first.id, 'save', 'Retry', 'Retry'), /undone/)
+
+    const stale = propose('stale')
+    notes.updateNote(original.id, { title: 'Changed in another browser' })
+    assert.throws(() => store.resolveProposal('updates', stale.id, 'save', 'Stale title', 'Stale body'), /changed or was deleted/)
+    assert.equal(notes.loadNotes()[0].title, 'Changed in another browser')
+    assert.equal(store.loadMessages('updates').find((message) => message.id === stale.id)?.proposal?.status, 'pending')
+
+    const later = propose('later')
+    store.resolveProposal('updates', later.id, 'save', 'Approved update', 'Updated content')
+    notes.updateNote(original.id, { content: textDocument('Later manual edit') })
+    assert.throws(() => store.resolveProposal('updates', later.id, 'undo'), /overwrite later changes/)
+    assert.equal(noteTextForTest(notes.loadNotes()[0].content), 'Later manual edit')
+
+    const failed = propose('failed-update')
+    const beforeFailure = notes.loadNotes()
+    const revisionCount = setup.prepare('SELECT COUNT(*) AS count FROM note_revisions').get()?.count
+    setup.exec("CREATE TRIGGER reject_update BEFORE UPDATE ON notes BEGIN SELECT RAISE(ABORT, 'simulated update failure'); END")
+    assert.throws(() => store.resolveProposal('updates', failed.id, 'save', 'Cannot save', 'Failure'), /simulated update failure/)
+    assert.deepEqual(notes.loadNotes(), beforeFailure)
+    assert.equal(setup.prepare('SELECT COUNT(*) AS count FROM note_revisions').get()?.count, revisionCount)
+    assert.equal(store.loadMessages('updates').find((message) => message.id === failed.id)?.proposal?.status, 'pending')
+    setup.exec('DROP TRIGGER reject_update')
+
+    const deleted = propose('deleted')
+    notes.deleteNote(original.id)
+    assert.throws(() => store.resolveProposal('updates', deleted.id, 'save', 'Resurrect', 'No'), /changed or was deleted/)
+    assert.deepEqual(notes.loadNotes(), [])
+  } finally { setup.close(); store.close(); notes.close(); await rm(directory, { recursive: true, force: true }) }
+})
+
+function noteTextForTest(content: import('../src/types/note.ts').Note['content']) {
+  return content.content?.[0]?.content?.[0]?.text
+}
 
 test('failed approval rolls back both the note and proposal status and can be retried', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'knowledge-manager-approval-'))
