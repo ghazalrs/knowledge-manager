@@ -2,13 +2,21 @@
 
 ## Current integration status
 
-The semantic search engine runs as a backend service. Ask and Organize use it through the shared [knowledge retriever](knowledge-retrieval.md). It also exposes a local `POST /api/search/semantic` endpoint. Home retains its original local text search; there is no separate semantic-search interface.
+The semantic search engine runs as a backend service. Ask and Organize use it through the shared [knowledge retriever](knowledge-retrieval.md). Home's single search bar also combines local text matches with semantic results from `POST /api/search/semantic`. There are no search modes to choose.
+
+## Home search
+
+Text matches appear immediately. After a 600 ms pause in typing, Home requests related notes and merges their ranked positions with the local text ranking. Notes found by both methods receive a boost, duplicate results are removed, and all local text matches remain available. Local title matches are ranked before body-only matches.
+
+Selecting a folder limits both methods to that folder. Folder names continue to use local text matching. Clearing the search restores the normal note list. Changing the query, folder, or browser's note data cancels the previous request and hides obsolete semantic results.
+
+A small status message indicates that related notes are loading. If that search fails, text matches remain visible with a Retry control. Queries larger than 2,000 UTF-8 bytes use text matching only until shortened. The first semantic request can take longer because it builds missing embeddings.
 
 The endpoint accepts a JSON body such as `{ "query": "why am I tired?", "folderId": null }` and returns ranked `results` containing `noteId`, `score`, `excerpt`, up to three matching `passages`, and a text `fingerprint`, plus `refreshed` and `searched` counts. An optional folder ID limits indexing and results to that folder. For example, a query about feeling tired can surface a note about sleep even without the word “tired”.
 
 The server uses the existing `OPENAI_API_KEY` from `.env.local` (or its environment). Restart `npm run dev` after backend or configuration changes. No additional package or service needs to be installed.
 
-Calling semantic search, including through chat, sends saved note titles, note text, and the search query to OpenAI. API usage is billed to the configured key. Editing notes alone does not trigger embedding requests. Home text search remains local.
+Calling semantic search, through chat or Home, sends saved note titles, note text, and the search query to OpenAI. API usage is billed to the configured key. Home's text matching stays local, but a nonempty search automatically adds a semantic request after the typing pause. Editing notes with no active search does not trigger embedding requests.
 
 ## The data flow
 
@@ -46,4 +54,8 @@ Calling semantic search, including through chat, sends saved note titles, note t
 - `server/embeddings.ts`: OpenAI requests, response validation, and safe error messages.
 - `server/semantic-search.ts`: passage splitting, fingerprints, SQLite caching, and ranking.
 - `server/semantic-api.ts`: local-request checks, input validation, cancellation, and deadlines.
+- `src/lib/search.ts`: local matching and Home's merged note ranking.
+- `src/lib/home-search.ts`: debounced requests, cancellation, and response validation.
+- `src/hooks/use-home-search.ts`: connect requests to the active Home query, folder, and notes.
+- `src/components/home/welcome-view.tsx`: single search field, combined results, and status feedback.
 - `tests/semantic-search.test.ts`: ranking, persistence, freshness, concurrency, Unicode, provider failures, and endpoint checks.

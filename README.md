@@ -21,7 +21,7 @@ Nested folders, knowledge graphs, and flashcards are planned.
 - **UI:** Tailwind CSS, shadcn/ui
 - **Editor:** Tiptap
 - **Backend and Database:** Local Node.js server and SQLite
-- **Search:** Local text search and hybrid keyword/semantic retrieval for chat
+- **Search:** Combined text/semantic search on Home and hybrid retrieval for chat
 
 ## Development setup
 
@@ -45,7 +45,7 @@ npm run preview  # Serve the production build locally
 1. Create notes and organize them into folders.
 2. Add information manually or through the AI chat.
 3. Use AI to clean, summarize, and organize information.
-4. Search notes by text, or open a note's assistant to ask about its content.
+4. Use Home's single search bar to find notes by words or meaning, or open a note's assistant to ask about its content.
 5. Use Ask chat to compare information across notes and open the sources below its answers.
 
 ## How it works

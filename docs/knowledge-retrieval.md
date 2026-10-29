@@ -40,7 +40,7 @@ Before saving an answer, the server rechecks its cited notes. A concurrent edit 
 
 Semantic retrieval gets 20 seconds. If it fails, times out, or is busy, chat uses keyword results and displays a limited-search warning. Completed embedding work remains cached. Generation gets a separate 70-second deadline. A failed message can be retried using the same ID.
 
-Ask does not change note or folder content. It does save conversation history and update the derived embedding cache. Both chat modes send note text to OpenAI for indexing and relevant text for generation; API charges apply. Home text search and the current-note assistant keep their existing behavior.
+Ask does not change note or folder content. It does save conversation history and update the derived embedding cache. Both chat modes send note text to OpenAI for indexing and relevant text for generation; API charges apply. Home combines text and semantic matching in its single search bar without generating answers. The current-note assistant keeps its existing behavior.
 
 Retrieval and model judgments are approximate. Validating a citation proves that the source was supplied, not that every claim follows from it. Ranking limits can miss useful notes, and “none” means the current search found insufficient evidence—not that no answer exists anywhere in your collection. Review the saved passages when accuracy matters. Existing chat replies are not retroactively given sources.
 

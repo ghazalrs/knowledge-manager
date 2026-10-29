@@ -3,7 +3,8 @@ import { ArrowLeft, ChevronRight, FileText, Folder as FolderIcon, NotebookPen, S
 import { Button } from '@/components/ui/button'
 import type { Folder } from '@/types/folder'
 import type { Note } from '@/types/note'
-import { searchWorkspace } from '@/lib/search'
+import { combinedSearchNotes, searchWorkspace } from '@/lib/search'
+import { useHomeSearch } from '@/hooks/use-home-search'
 
 type WelcomeViewProps = {
   folders: Folder[]
@@ -20,7 +21,10 @@ export function WelcomeView({ folders, notes, onOpenNote }: WelcomeViewProps) {
   const searchInput = useRef<HTMLInputElement>(null)
   const searching = query.trim().length > 0
   const selectedFolder = folders.find((folder) => folder.id === selectedFolderId)
-  const { notes: visibleNotes, folders: visibleFolders } = searchWorkspace(notes, folders, query, selectedFolder?.id ?? null)
+  const folderId = selectedFolder?.id ?? null
+  const semantic = useHomeSearch(notes, query, folderId)
+  const { folders: visibleFolders } = searchWorkspace(notes, folders, query, folderId)
+  const visibleNotes = combinedSearchNotes(notes, query, semantic.noteIds, folderId)
   const folderNames = new Map(folders.map((folder) => [folder.id, folder.name]))
   const noteCounts = new Map<string, number>()
   for (const note of notes) {
@@ -49,6 +53,12 @@ export function WelcomeView({ folders, notes, onOpenNote }: WelcomeViewProps) {
             </Button>
           )}
         </div>
+        <p className="mt-2 text-xs text-muted-foreground">Search matches words and related meanings. Related-note search sends queries and saved note text to OpenAI; API charges apply.</p>
+        {searching && semantic.pending && <p role="status" className="mt-2 text-xs text-muted-foreground">Finding related notes… Text matches are shown while searching.</p>}
+        {semantic.error && <div role="status" className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          <p>Showing text matches only. {semantic.error}</p>
+          <Button type="button" variant="ghost" size="sm" onClick={semantic.retry}>Retry</Button>
+        </div>}
         <p role="status" className="sr-only">{visibleFolders.length} folders and {visibleNotes.length} notes found{selectedFolder ? `; notes filtered to ${selectedFolder.name}` : ''}.</p>
       </section>
 
@@ -100,9 +110,9 @@ export function WelcomeView({ folders, notes, onOpenNote }: WelcomeViewProps) {
         {visibleNotes.length === 0 ? (
           <div className="flex flex-col items-center rounded-2xl bg-muted/40 px-5 py-12 text-center">
             <NotebookPen aria-hidden="true" className="mb-3 size-7 text-muted-foreground" />
-            <p className="text-sm font-medium">{searching ? 'No notes match your search' : selectedFolder ? 'This folder is empty' : 'No notes yet'}</p>
+            <p className="text-sm font-medium">{searching ? semantic.pending ? 'Finding matching notes…' : 'No notes match your search' : selectedFolder ? 'This folder is empty' : 'No notes yet'}</p>
             <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-              {searching ? `Try a different search or clear it${selectedFolder ? ', or choose All notes to search every folder' : ''}.` : selectedFolder ? 'Choose New note from this folder’s sidebar menu to add a note.' : 'Use New note in the sidebar to capture your first idea.'}
+              {searching ? semantic.pending ? 'Checking related meanings as well as matching words.' : `Try a different search or clear it${selectedFolder ? ', or choose All notes to search every folder' : ''}.` : selectedFolder ? 'Choose New note from this folder’s sidebar menu to add a note.' : 'Use New note in the sidebar to capture your first idea.'}
             </p>
           </div>
         ) : (
