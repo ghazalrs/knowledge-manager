@@ -10,6 +10,7 @@ import { ChatStore } from './chat-store.ts'
 import { createEmbedder } from './embeddings.ts'
 import { SemanticSearch } from './semantic-search.ts'
 import { createSemanticApi } from './semantic-api.ts'
+import { createKnowledgeRetriever } from './knowledge-retrieval.ts'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
 const production = process.argv.includes('--production')
@@ -19,8 +20,8 @@ await mkdir(dirname(databasePath), { recursive: true })
 const store = new NotesStore(databasePath)
 const chatStore = new ChatStore(databasePath)
 const config = await loadChatConfig(resolve(root, '.env.local'))
-const chatApi = createChatApi(config, chatStore)
 const semanticSearch = new SemanticSearch(databasePath, () => store.loadNotes(), createEmbedder(config.apiKey))
+const chatApi = createChatApi({ ...config, retrieve: createKnowledgeRetriever(() => store.loadNotes(), semanticSearch) }, chatStore)
 const semanticApi = createSemanticApi(semanticSearch)
 const api = createNotesApi(store)
 const vite = production ? null : await (await import('vite')).createServer({

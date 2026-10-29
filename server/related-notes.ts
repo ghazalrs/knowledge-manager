@@ -28,7 +28,13 @@ function frequencies(terms: string[]) {
   return counts
 }
 
-export function findRelatedNotes(notes: Note[], query: string, recentUserMessages: string[] = []): Note[] {
+export function retrievalQuery(query: string, recentUserMessages: string[] = []) {
+  const followUp = !/\b(new topic|different topic|switch|instead)\b/i.test(query)
+    && /\b(this|that|it|these|those|same|also|too|more|above|previous|continue)\b/i.test(query) && words(query).length <= 8
+  return followUp ? [...recentUserMessages.slice(-3).map((message) => message.slice(0, 1000)), query].join('\n') : query
+}
+
+export function findRelatedNotes(notes: Note[], query: string, recentUserMessages: string[] = [], limit = 4): Note[] {
   const latest = [...new Set(words(query))].slice(0, 80)
   const changedTopic = /\b(new topic|different topic|switch|instead)\b/i.test(query)
   const followUp = !changedTopic && /\b(this|that|it|these|those|same|also|too|more|above|previous|continue)\b/i.test(query) && latest.length <= 8
@@ -75,5 +81,5 @@ export function findRelatedNotes(notes: Note[], query: string, recentUserMessage
     return { note: doc.note, score }
   }).filter(({ score }) => score > 0)
     .sort((a, b) => b.score - a.score || b.note.createdAt - a.note.createdAt || a.note.id.localeCompare(b.note.id))
-    .slice(0, 4).map(({ note }) => note)
+    .slice(0, limit).map(({ note }) => note)
 }

@@ -185,6 +185,7 @@ function App() {
         <main className={activeView === 'chat' || selectedNote ? 'flex min-h-0 flex-1 flex-col overflow-hidden' : 'flex-1 px-5 pb-12 pt-4 sm:px-8 sm:pt-6 lg:px-12'}>
           {activeView === 'chat' ? (
             <ChatView key={activeConversationId} messages={chatMessages} draft={chatDraft} attachments={chatAttachments}
+              noteIds={new Set(notes.map((note) => note.id))} onOpenNote={selectNote}
               mode={chatMode} onModeChange={setChatMode} proposalSaveDisabled={loading || loadError || saveStatus !== 'saved'}
               onRetryProposal={retryProposal}
               onResolveProposal={async (id, action, title, content, document) => {

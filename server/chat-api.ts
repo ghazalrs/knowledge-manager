@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { isLocalRequest, isObject, json, readBody, RequestError } from './api.ts'
-import { generateReply, generateConversationTitle, generateNoteProposal, generateNoteAssistantReply } from './openai.ts'
+import { generateReply, generateConversationTitle, generateNoteProposal, generateNoteAssistantReply, generateKnowledgeReply } from './openai.ts'
 import type { ChatStore } from './chat-store.ts'
 import type { StoredChatMessage } from '../src/types/chat.ts'
 import { validNoteDocument } from './note-document.ts'
@@ -8,8 +8,11 @@ import { noteText } from '../src/lib/note-text.ts'
 import type { ChatTextMessage } from '../src/types/chat.ts'
 import { isNoteUndoRequest } from './note-undo.ts'
 import { createHash } from 'node:crypto'
+import type { Retrieve } from './knowledge-retrieval.ts'
+import type { KnowledgeAnswer } from '../src/types/chat.ts'
+import { fingerprint } from './semantic-search.ts'
 
-export function createChatApi(options: { apiKey?: string; model: string; fetcher?: typeof fetch; titleGenerator?: typeof generateConversationTitle }, store: ChatStore) {
+export function createChatApi(options: { apiKey?: string; model: string; fetcher?: typeof fetch; titleGenerator?: typeof generateConversationTitle; retrieve?: Retrieve }, store: ChatStore) {
   const inFlight = new Map<string, { id: string; work: Promise<StoredChatMessage> }>()
   const titleJobs = new Set<string>()
 
@@ -165,10 +168,20 @@ export function createChatApi(options: { apiKey?: string; model: string; fetcher
           }
           const input = context.map(({ role, content: text }) => ({ role, content: text }))
           const recentUserMessages = context.filter((message) => message.role === 'user').slice(0, -1).slice(-3).map((message) => message.content)
-          const proposal = mode === 'organize' ? await generateNoteProposal(input, options, store.relatedNotes(content, recentUserMessages)) : undefined
-          const reply = proposal ? { content: proposal.action === 'update' ? 'Review the proposed update against the original note before saving.' : 'Review this proposed note. Edit it, then choose Save note to add it to your workspace.' } : await generateReply(input, options)
+          const retrieval = options.retrieve ? await options.retrieve(content, recentUserMessages, mode) : undefined
+          const generationOptions = { ...options, signal: AbortSignal.timeout(70000) }
+          const proposal = mode === 'organize' ? await generateNoteProposal(input, generationOptions,
+            retrieval ? retrieval.matches.map(({ note }) => note) : store.relatedNotes(content, recentUserMessages)) : undefined
+          const reply: { content: string; knowledge?: KnowledgeAnswer } = proposal
+            ? { content: proposal.action === 'update' ? 'Review the proposed update against the original note before saving.' : 'Review this proposed note. Edit it, then choose Save note to add it to your workspace.',
+              ...(retrieval?.warning ? { knowledge: { support: 'none', sources: [], warning: retrieval.warning } } : {}) }
+            : retrieval ? await generateKnowledgeReply(input, generationOptions, retrieval) : await generateReply(input, generationOptions)
+          for (const source of reply.knowledge?.sources ?? []) {
+            const current = store.loadNote(source.noteId)
+            if (!current || fingerprint(current) !== source.fingerprint) throw new RequestError(409, 'A source note changed while answering. Retry to use its latest saved content.')
+          }
           if (!store.hasConversation(conversationId)) throw new RequestError(404, 'Conversation was deleted.')
-          const saved = store.saveReply(id, reply.content, conversationId, proposal)
+          const saved = store.saveReply(id, reply.content, conversationId, proposal, reply.knowledge)
           updateTitle(conversationId)
           return saved
         })()

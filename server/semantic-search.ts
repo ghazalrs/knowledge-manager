@@ -93,14 +93,10 @@ export class SemanticSearch {
       const results = indexed.flatMap(({ note, hash, chunks, vectors }) => {
         const latest = current.get(note.id)
         if (!latest || fingerprint(latest) !== hash || (folderId !== null && latest.folderId !== folderId)) return []
-        let best = -Infinity
-        let excerpt = ''
-        vectors.forEach((vector, index) => {
-          const score = similarity(queryVector, vector)
-          if (score > best) { best = score; excerpt = chunks[index].slice(0, 300) }
-        })
         // Similarity is a ranking signal, not a calibrated probability of relevance.
-        return best >= 0.25 ? [{ noteId: note.id, score: best, excerpt }] : []
+        const ranked = vectors.map((vector, index) => ({ text: chunks[index], score: similarity(queryVector, vector) }))
+          .sort((a, b) => b.score - a.score).filter((item) => item.score >= 0.25).slice(0, 3)
+        return ranked.length ? [{ noteId: note.id, score: ranked[0].score, excerpt: ranked[0].text.slice(0, 300), passages: ranked.map((item) => item.text), fingerprint: hash }] : []
       }).sort((a, b) => b.score - a.score || a.noteId.localeCompare(b.noteId)).slice(0, 20)
       return { results, refreshed, searched: indexed.length }
     } finally { this.busy = false }

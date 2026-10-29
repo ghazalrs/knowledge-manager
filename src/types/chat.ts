@@ -6,6 +6,15 @@ export type ChatAttachment = {
 }
 
 export type ChatMode = 'ask' | 'organize'
+export type NoteSource = {
+  noteId: string; title: string; excerpt: string; fingerprint: string
+  state?: 'current' | 'changed' | 'deleted'
+}
+export type KnowledgeAnswer = {
+  support: 'supported' | 'partial' | 'none'
+  sources: NoteSource[]
+  warning?: string
+}
 export type ProposalAction = 'save' | 'discard' | 'undo' | 'reopen'
 export type NoteProposal = {
   title: string; content: string; status: 'pending' | 'saved' | 'discarded' | 'undone'; noteId?: string
@@ -24,13 +33,14 @@ export type ChatMessage = {
   mode?: ChatMode
   proposal?: NoteProposal
   replyTo?: string
+  knowledge?: KnowledgeAnswer
 }
 
 export type ChatTextMessage = Pick<ChatMessage, 'role' | 'content'>
 export type NoteAssistantProposal = { id: string; proposal: NoteProposal }
 export type NoteAssistantReply = { content: string; edit?: NoteAssistantProposal; note?: Note | null }
 
-export type StoredChatMessage = ChatTextMessage & { id: string; createdAt: number; mode?: ChatMode; proposal?: NoteProposal; replyTo?: string }
+export type StoredChatMessage = ChatTextMessage & { id: string; createdAt: number; mode?: ChatMode; proposal?: NoteProposal; replyTo?: string; knowledge?: KnowledgeAnswer }
 
 export type Conversation = { id: string; title: string; createdAt: number; titleState?: 'fallback' | 'pending' | 'generated' | 'manual' | 'failed' }
 

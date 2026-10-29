@@ -1,10 +1,11 @@
 import { DatabaseSync } from 'node:sqlite'
 import { randomUUID } from 'node:crypto'
-import type { ChatMode, Conversation, NoteAssistantProposal, NoteAssistantReply, NoteProposal, ProposalAction, StoredChatMessage } from '../src/types/chat.ts'
+import type { ChatMode, Conversation, NoteAssistantProposal, NoteAssistantReply, NoteProposal, ProposalAction, StoredChatMessage, KnowledgeAnswer } from '../src/types/chat.ts'
 import type { Note } from '../src/types/note.ts'
 import { RequestError } from './api.ts'
 import { noteText, textDocument } from '../src/lib/note-text.ts'
 import { findRelatedNotes } from './related-notes.ts'
+import { fingerprint } from './semantic-search.ts'
 
 export class ChatStore {
   private db: DatabaseSync
@@ -41,6 +42,7 @@ export class ChatStore {
     const messageColumns = this.db.prepare('PRAGMA table_info(chat_messages)').all()
     if (!messageColumns.some((column) => column.name === 'mode')) this.db.exec("ALTER TABLE chat_messages ADD COLUMN mode TEXT NOT NULL DEFAULT 'ask'")
     if (!messageColumns.some((column) => column.name === 'proposal')) this.db.exec('ALTER TABLE chat_messages ADD COLUMN proposal TEXT')
+    if (!messageColumns.some((column) => column.name === 'knowledge')) this.db.exec('ALTER TABLE chat_messages ADD COLUMN knowledge TEXT')
     this.db.exec(`CREATE TABLE IF NOT EXISTS note_revisions (
       id TEXT PRIMARY KEY,
       noteId TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
@@ -139,9 +141,14 @@ export class ChatStore {
   }
 
   private message(row: Record<string, unknown>): StoredChatMessage {
+    const knowledge: KnowledgeAnswer | undefined = typeof row.knowledge === 'string' ? JSON.parse(row.knowledge) : undefined
+    if (knowledge) knowledge.sources = knowledge.sources.map((source) => {
+      const current = this.currentNote(source.noteId)
+      return { ...source, state: !current ? 'deleted' : fingerprint(current) === source.fingerprint ? 'current' : 'changed' }
+    })
     return { id: row.id as string, role: row.role as StoredChatMessage['role'], content: row.content as string, createdAt: row.createdAt as number,
       mode: (row.mode ?? 'ask') as ChatMode, ...(typeof row.proposal === 'string' ? { proposal: JSON.parse(row.proposal) as NoteProposal } : {}),
-      ...(typeof row.replyTo === 'string' ? { replyTo: row.replyTo } : {}) }
+      ...(typeof row.replyTo === 'string' ? { replyTo: row.replyTo } : {}), ...(knowledge ? { knowledge } : {}) }
   }
 
   listConversations(): Conversation[] {
@@ -205,12 +212,12 @@ export class ChatStore {
     return row ? this.message(row) : undefined
   }
 
-  saveReply(userId: string, content: string, conversationId = 'main', proposal?: NoteProposal): StoredChatMessage {
+  saveReply(userId: string, content: string, conversationId = 'main', proposal?: NoteProposal, knowledge?: KnowledgeAnswer): StoredChatMessage {
     const user = this.db.prepare("SELECT id, mode FROM chat_messages WHERE id = ? AND conversationId = ? AND role = 'user'").get(userId, conversationId)
     if (!user) throw new Error('User message does not belong to this conversation')
-    this.db.prepare(`INSERT INTO chat_messages (id, conversationId, role, content, createdAt, replyTo, mode, proposal)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(replyTo) DO NOTHING`)
-      .run(randomUUID(), conversationId, 'assistant', content, Date.now(), userId, user.mode as string, proposal ? JSON.stringify(proposal) : null)
+    this.db.prepare(`INSERT INTO chat_messages (id, conversationId, role, content, createdAt, replyTo, mode, proposal, knowledge)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(replyTo) DO NOTHING`)
+      .run(randomUUID(), conversationId, 'assistant', content, Date.now(), userId, user.mode as string, proposal ? JSON.stringify(proposal) : null, knowledge ? JSON.stringify(knowledge) : null)
     return this.findReply(userId, conversationId)!
   }
 

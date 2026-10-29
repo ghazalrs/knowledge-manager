@@ -8,7 +8,7 @@ Before sending, the interface waits for workspace saves to finish. For each requ
 
 It sends OpenAI that note, a bounded portion of the panel conversation, and authoritative proposal statuses. It does not retrieve other notes or use the main chat's history.
 
-The distinction matters: the main Ask chat knows its conversation, while this assistant also receives the selected saved note.
+The distinction matters: main Ask chat retrieves evidence across saved notes, while this assistant receives only the selected saved note and its panel conversation.
 
 ## Answers versus edits
 

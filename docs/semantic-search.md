@@ -2,13 +2,13 @@
 
 ## Current integration status
 
-The semantic search engine is implemented as a backend service with a local `POST /api/search/semantic` endpoint. It has no user interface and is not yet connected to chat. Home retains its original local text search. Future chat integration can call this engine to find related notes by meaning.
+The semantic search engine runs as a backend service. Ask and Organize use it through the shared [knowledge retriever](knowledge-retrieval.md). It also exposes a local `POST /api/search/semantic` endpoint. Home retains its original local text search; there is no separate semantic-search interface.
 
-The endpoint accepts a JSON body such as `{ "query": "why am I tired?", "folderId": null }` and returns ranked `results` containing `noteId`, `score`, and `excerpt`, plus `refreshed` and `searched` counts. An optional folder ID limits indexing and results to that folder. For example, a query about feeling tired can surface a note about sleep even without the word “tired”.
+The endpoint accepts a JSON body such as `{ "query": "why am I tired?", "folderId": null }` and returns ranked `results` containing `noteId`, `score`, `excerpt`, up to three matching `passages`, and a text `fingerprint`, plus `refreshed` and `searched` counts. An optional folder ID limits indexing and results to that folder. For example, a query about feeling tired can surface a note about sleep even without the word “tired”.
 
 The server uses the existing `OPENAI_API_KEY` from `.env.local` (or its environment). Restart `npm run dev` after backend or configuration changes. No additional package or service needs to be installed.
 
-Calling semantic search sends saved note titles, note text, and the search query to OpenAI. API usage is billed to the configured key. Ordinary app usage does not call this endpoint or trigger embedding requests. Text search remains local.
+Calling semantic search, including through chat, sends saved note titles, note text, and the search query to OpenAI. API usage is billed to the configured key. Editing notes alone does not trigger embedding requests. Home text search remains local.
 
 ## The data flow
 
@@ -34,11 +34,11 @@ Calling semantic search sends saved note titles, note text, and the search query
 
 - Search uses saved content. Unsaved edits are not sent for indexing.
 - One semantic request runs at a time to avoid duplicate indexing costs. Other requests receive a retry message.
-- A search has a 90-second server deadline. Very large collections may require retries; completed notes are retained, but an incomplete note must start again.
+- The standalone endpoint has a 90-second server deadline. Chat allows 20 seconds for retrieval, then falls back to keyword search with a warning. Very large collections may need multiple requests to finish indexing; completed notes are retained, but an incomplete note must start again.
 - Note deletion cascades to its cached vectors. Changed entries are replaced on the next search that includes the note. The cache is derived data; original note content is never changed by searching.
 - Query vectors are generated on each submitted search. Only note vectors are persisted.
 - Semantic similarity is approximate. The cutoff and ranking need evaluation against real queries; scores are not confidence percentages. Text search remains useful for exact wording.
-- This implementation finds notes. It does not generate answers, modify assistant retrieval, or build a knowledge graph; those belong to later phases.
+- This engine finds passages. The chat layer generates answers and validates source references. It does not build a knowledge graph or change the current-note assistant's scope.
 - Automated tests use fake vectors and mocked provider responses. They verify mechanics and failure handling without sending personal notes or measuring the real model's retrieval quality.
 
 ## Code map

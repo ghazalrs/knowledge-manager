@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import type { ChatAttachment, ChatMessage, ChatMode } from '@/types/chat'
 import { NoteProposalCard } from '@/components/chat/note-proposal-card'
 import { AttachmentList } from '@/components/chat/attachment-list'
+import { AnswerSources } from '@/components/chat/answer-sources'
 
 type ChatViewProps = {
   messages: ChatMessage[]
@@ -19,6 +20,8 @@ type ChatViewProps = {
   onRemoveAttachment: (id: string) => void
   onDraftChange: (value: string) => void
   onSend: () => void
+  onOpenNote: (id: string) => void
+  noteIds: Set<string>
   mode: ChatMode
   onModeChange: (mode: ChatMode) => void
   proposalSaveDisabled: boolean
@@ -26,7 +29,7 @@ type ChatViewProps = {
   onResolveProposal: (id: string, action: 'save' | 'discard' | 'undo' | 'reopen', title?: string, content?: string, document?: import('@/types/note').Note['content']) => Promise<void>
 }
 
-export function ChatView({ messages, draft, attachments, sending, error, loading, loadError, onRetryLoad, onRetry, onAddAttachments, onRemoveAttachment, onDraftChange, onSend, mode, onModeChange, proposalSaveDisabled, onResolveProposal, onRetryProposal }: ChatViewProps) {
+export function ChatView({ messages, draft, attachments, sending, error, loading, loadError, onRetryLoad, onRetry, onAddAttachments, onRemoveAttachment, onDraftChange, onSend, onOpenNote, noteIds, mode, onModeChange, proposalSaveDisabled, onResolveProposal, onRetryProposal }: ChatViewProps) {
   const textarea = useRef<HTMLTextAreaElement>(null)
   const messageList = useRef<HTMLDivElement>(null)
   const composerId = useId()
@@ -52,7 +55,7 @@ export function ChatView({ messages, draft, attachments, sending, error, loading
             variant={mode === value ? 'secondary' : 'ghost'} className="rounded-full" aria-pressed={mode === value}
             disabled={sending || loading || !!loadError} onClick={() => onModeChange(value)}>{value === 'ask' ? 'Ask' : 'Organize'}</Button>)}
         </div>
-        <p className="text-xs text-muted-foreground">{mode === 'ask' ? 'Explore ideas and ask questions.' : 'Find related notes and propose changes for your approval.'}</p>
+        <p className="text-xs text-muted-foreground">{mode === 'ask' ? 'Ask across your saved notes, with sources you can open.' : 'Find related notes and propose changes for your approval.'}</p>
       </div>
       <div ref={messageList} className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 sm:px-6">
         {loading ? <p role="status" className="mx-auto max-w-3xl py-8 text-sm text-muted-foreground">Loading chat history…</p>
@@ -79,6 +82,8 @@ export function ChatView({ messages, draft, attachments, sending, error, loading
                   {message.proposal && <NoteProposalCard key={`${message.id}-${message.proposal.status}`} proposal={message.proposal} disabled={proposalSaveDisabled}
                     retryDisabled={proposalSaveDisabled || sending || loading || !!loadError} onRetry={() => onRetryProposal(message.id)}
                     onResolve={(action, title, content, document) => onResolveProposal(message.id, action, title, content, document)} />}
+                  {message.role === 'assistant' && message.knowledge && <AnswerSources knowledge={message.knowledge}
+                    showSupport={!message.proposal} noteIds={noteIds} onOpenNote={onOpenNote} />}
                 </div>
               </li>
             ))}
@@ -86,7 +91,7 @@ export function ChatView({ messages, draft, attachments, sending, error, loading
         )}
         {sending && (
           <p role="status" className="mx-auto flex w-full max-w-3xl items-center gap-2 py-4 text-sm text-muted-foreground">
-            <LoaderCircle aria-hidden="true" className="size-4 motion-safe:animate-spin" /> Thinking…
+            <LoaderCircle aria-hidden="true" className="size-4 motion-safe:animate-spin" /> Searching saved notes and thinking…
           </p>
         )}
       </div>
@@ -140,7 +145,7 @@ export function ChatView({ messages, draft, attachments, sending, error, loading
               <ArrowUp aria-hidden="true" />
             </Button>
         </form>
-        <p className="mt-2 px-2 text-center text-xs leading-5 text-muted-foreground">{mode === 'organize' ? 'Organize sends your message and matching note text to OpenAI. Changes need your approval.' : 'Text history is saved on this computer. Only text is sent to OpenAI; files stay in this session.'}</p>
+        <p className="mt-2 px-2 text-center text-xs leading-5 text-muted-foreground">Chat sends note text to OpenAI for search indexing, plus your messages and relevant note text for replies. API charges apply. {mode === 'organize' ? 'Changes need your approval.' : 'Ask does not change notes.'} Files stay in this session.</p>
       </div>
     </section>
   )
