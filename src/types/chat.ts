@@ -27,6 +27,8 @@ export type ChatMessage = {
 }
 
 export type ChatTextMessage = Pick<ChatMessage, 'role' | 'content'>
+export type NoteAssistantProposal = { id: string; proposal: NoteProposal }
+export type NoteAssistantReply = { content: string; edit?: NoteAssistantProposal; note?: Note | null }
 
 export type StoredChatMessage = ChatTextMessage & { id: string; createdAt: number; mode?: ChatMode; proposal?: NoteProposal; replyTo?: string }
 

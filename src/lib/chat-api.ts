@@ -1,4 +1,4 @@
-import type { ChatMode, ChatTextMessage, Conversation, StoredChatMessage } from '@/types/chat'
+import type { ChatMode, ChatTextMessage, Conversation, NoteAssistantProposal, NoteAssistantReply, ProposalAction, StoredChatMessage } from '@/types/chat'
 import type { Note } from '@/types/note'
 
 async function chatRequest(path: string, message?: unknown, method = message ? 'POST' : 'GET') {
@@ -19,10 +19,20 @@ async function chatRequest(path: string, message?: unknown, method = message ? '
   return data
 }
 
-export async function askAboutNote(noteId: string, messages: ChatTextMessage[]): Promise<string> {
-  const data = await chatRequest(`/notes/${encodeURIComponent(noteId)}`, { messages })
+export async function askAboutNote(noteId: string, messages: ChatTextMessage[], requestId?: string): Promise<NoteAssistantReply> {
+  const data = await chatRequest(`/notes/${encodeURIComponent(noteId)}`, { messages, ...(requestId ? { requestId } : {}) })
   if (typeof data?.content !== 'string' || !data.content.trim()) throw new Error('The assistant returned an unreadable answer. Please retry.')
-  return data.content
+  return data
+}
+
+export async function loadNoteEdits(noteId: string): Promise<NoteAssistantProposal[]> {
+  const data = await chatRequest(`/notes/${encodeURIComponent(noteId)}/proposals`)
+  if (!Array.isArray(data)) throw new Error('Could not load note updates. Please retry.')
+  return data
+}
+
+export async function resolvePanelEdit(noteId: string, id: string, action: ProposalAction, title?: string, content?: string, document?: Note['content']): Promise<{ edit: NoteAssistantProposal; note: Note | null }> {
+  return chatRequest(`/notes/${encodeURIComponent(noteId)}/proposals/${encodeURIComponent(id)}`, { action, title, content, document })
 }
 
 export async function renameConversation(id: string, title: string): Promise<Conversation> {

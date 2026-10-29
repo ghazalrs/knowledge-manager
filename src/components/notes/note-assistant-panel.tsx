@@ -2,17 +2,21 @@ import { useEffect, useId, useRef, useState } from 'react'
 import { ArrowUp, FileText, Lightbulb, ListChecks, LoaderCircle, Sparkles, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { askAboutNote } from '@/lib/chat-api'
-import type { ChatTextMessage } from '@/types/chat'
+import type { ChatTextMessage, NoteAssistantProposal } from '@/types/chat'
+import type { Note } from '@/types/note'
 
-type Props = { noteId: string; title: string; ready: boolean; open: boolean; onClose: () => void }
+type Props = { noteId: string; title: string; ready: boolean; open: boolean; onClose: () => void;
+  edits: NoteAssistantProposal[]; onEdit: (edit: NoteAssistantProposal) => void; onReview: (id: string) => void;
+  editsError: string; onRetryEdits: () => void; onNoteChanged: (note: Note) => void }
 
-export function NoteAssistantPanel({ noteId, title, ready, open, onClose }: Props) {
+export function NoteAssistantPanel({ noteId, title, ready, open, onClose, edits, onEdit, onReview, editsError, onRetryEdits, onNoteChanged }: Props) {
   const [messages, setMessages] = useState<ChatTextMessage[]>([])
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
   const [pending, setPending] = useState<ChatTextMessage[] | null>(null)
   const [error, setError] = useState('')
   const running = useRef(false)
+  const requestId = useRef<string | null>(null)
   const list = useRef<HTMLDivElement>(null)
   const inputId = useId()
   const textarea = useRef<HTMLTextAreaElement>(null)
@@ -37,8 +41,12 @@ export function NoteAssistantPanel({ noteId, title, ready, open, onClose }: Prop
     try {
       const context = history.slice(-19).map((message) => ({ ...message, content: message.content.slice(0, 10000) }))
       while (context.length > 1 && context.reduce((sum, message) => sum + message.content.length, 0) > 50000) context.splice(0, 2)
-      const content = await askAboutNote(noteId, context)
-      setMessages([...history, { role: 'assistant', content }])
+      requestId.current ??= crypto.randomUUID()
+      const response = await askAboutNote(noteId, context, requestId.current)
+      setMessages([...history, { role: 'assistant', content: response.content }])
+      if (response.edit) onEdit(response.edit)
+      if (response.note) onNoteChanged(response.note)
+      requestId.current = null
       setPending(null)
     } catch (failure) { setError(failure instanceof Error ? failure.message : 'Could not get an answer. Please retry.') }
     finally { running.current = false; setSending(false) }
@@ -53,23 +61,24 @@ export function NoteAssistantPanel({ noteId, title, ready, open, onClose }: Prop
   }
 
   return (
-    <section aria-label={`Note assistant for ${title}`} className="flex h-full min-h-0 flex-col bg-background">
+    <section aria-label={`Note assistant for ${title}`} className="flex h-full min-h-0 flex-col">
       <div className="flex shrink-0 items-center justify-between px-3 pt-3">
         <Button type="button" variant="secondary" size="icon" className="size-12 rounded-full" aria-label="Focus note assistant question"
           title="Ask about this note" onClick={() => textarea.current?.focus({ preventScroll: true })}><Sparkles className="size-5" aria-hidden="true" /></Button>
-        <Button type="button" variant="ghost" size="icon" className="rounded-full" aria-label="Close note assistant" title="Close note assistant" onClick={onClose}><X aria-hidden="true" /></Button>
+        <Button type="button" variant="ghost" size="icon" className="size-12 rounded-full" aria-label="Close note assistant" title="Close note assistant" onClick={onClose}><X aria-hidden="true" /></Button>
       </div>
       <div ref={list} className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4">
         {!messages.length && <div className="flex min-h-full flex-col gap-8 py-5">
           <div className="flex flex-1 flex-col items-center justify-center text-center">
             <h3 className="text-xl font-medium tracking-tight">Explore this note</h3>
-            <p className="mt-2 max-w-64 text-sm leading-6 text-muted-foreground">Ask a question, untangle an idea, or get a quick summary.</p>
+            <p className="mt-2 max-w-64 text-sm leading-6 text-muted-foreground">Ask a question or request an edit. Review changes before saving.</p>
           </div>
           <div className="space-y-2">
             {[
               { label: 'Summarize this note', prompt: 'Summarize this note.', icon: FileText },
               { label: 'Explain the main ideas', prompt: 'Explain the main ideas in this note in simple terms.', icon: Lightbulb },
               { label: 'What are the key takeaways?', prompt: 'What are the key takeaways from this note?', icon: ListChecks },
+              { label: 'Improve the writing', prompt: 'Propose an edit to improve the clarity and organization of this note while preserving its facts.', icon: FileText },
             ].map(({ label, prompt, icon: Icon }) => <Button key={label} type="button" variant="outline"
               className="h-auto min-h-10 w-full justify-start gap-3 rounded-2xl px-4 py-2 text-left text-sm font-normal whitespace-normal"
               disabled={!ready} onClick={() => send(prompt)}><Icon className="size-4 text-muted-foreground" aria-hidden="true" />{label}</Button>)}
@@ -81,6 +90,15 @@ export function NoteAssistantPanel({ noteId, title, ready, open, onClose }: Prop
           </li>)}
         </ol>
         {sending && <p role="status" className="flex items-center gap-2 py-3 text-xs text-muted-foreground"><LoaderCircle className="size-4 motion-safe:animate-spin" aria-hidden="true" />Thinking…</p>}
+        {edits.length > 0 && <details className="mt-5 text-sm" open={!messages.length}>
+          <summary className="cursor-pointer text-muted-foreground">Note updates ({edits.length})</summary>
+          <ul className="mt-2 space-y-2">{edits.map((edit) => <li key={edit.id}>
+            <Button type="button" variant="outline" className="h-auto w-full flex-col items-start gap-1 rounded-xl px-3 py-2 text-left whitespace-normal" onClick={() => onReview(edit.id)}>
+              <span className="break-words">{edit.proposal.title || 'Untitled'}</span><span className="text-xs font-normal text-muted-foreground">{edit.proposal.status === 'pending' ? 'Review update' : edit.proposal.status === 'saved' ? 'Saved · Undo available' : edit.proposal.status === 'discarded' ? 'Discarded · Try again available' : 'Update undone'}</span>
+            </Button>
+          </li>)}</ul>
+        </details>}
+        {editsError && <div role="alert" className="mt-3 text-sm text-destructive"><p>{editsError}</p><Button type="button" variant="outline" size="sm" onClick={onRetryEdits}>Retry updates</Button></div>}
       </div>
       <div className="shrink-0 space-y-2 px-4 pb-4 pt-3">
         {error && <div role="alert" className="text-sm text-destructive"><p>{error}</p><Button type="button" variant="outline" size="sm" className="mt-2" disabled={sending || !ready} onClick={() => { if (pending) void request(pending) }}>Retry</Button></div>}

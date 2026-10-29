@@ -137,8 +137,8 @@ function App() {
           <Sidebar {...sidebarProps} />
         </DesktopSidebar>
       )}
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <header className="flex h-16 shrink-0 items-center gap-3 px-4 sm:px-6">
+      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+        <header className={`flex h-16 shrink-0 items-center gap-3 px-4 sm:px-6 ${activeView === 'note' && selectedNote ? 'pointer-events-none absolute inset-x-0 top-0 z-20 [&_button]:pointer-events-auto' : ''}`}>
           <Dialog.Root open={mobileOpen} onOpenChange={setMobileOpen}>
             <Dialog.Trigger asChild>
               <Button variant="ghost" size="icon" className="md:hidden" aria-label="Open sidebar">
@@ -201,6 +201,7 @@ function App() {
             <NoteWorkspace
               key={selectedNote.id}
               note={selectedNote}
+              onSavedNote={includeSavedNote}
               ready={!loading && !loadError && saveStatus === 'saved'}
               folderName={folders.find((folder) => folder.id === selectedNote.folderId)?.name}
               onContentChange={updateNoteContent}

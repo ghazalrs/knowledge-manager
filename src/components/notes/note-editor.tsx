@@ -31,6 +31,14 @@ export function NoteEditor({ content, onChange, editable = true, label = 'Note c
 
   useEffect(() => { editor?.setEditable(editable, false) }, [editor, editable])
 
+  useEffect(() => {
+    if (!editor || editor.isDestroyed) return
+    const incoming = editor.schema.nodeFromJSON(content)
+    if (!editor.state.doc.eq(incoming)) {
+      editor.commands.setContent(content, { emitUpdate: false })
+    }
+  }, [editor, content])
+
   const active = useEditorState({
     editor,
     selector: ({ editor }) => ({
@@ -69,7 +77,7 @@ export function NoteEditor({ content, onChange, editable = true, label = 'Note c
             <Icon aria-hidden="true" />
           </Button>
         ))}
-      </div> : <div className="mb-3 flex min-h-11 items-center text-xs text-muted-foreground">Read-only</div>}
+      </div> : null}
       <EditorContent editor={editor} />
     </div>
   )

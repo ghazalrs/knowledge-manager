@@ -1,6 +1,6 @@
 import { DatabaseSync } from 'node:sqlite'
 import { randomUUID } from 'node:crypto'
-import type { ChatMode, Conversation, NoteProposal, ProposalAction, StoredChatMessage } from '../src/types/chat.ts'
+import type { ChatMode, Conversation, NoteAssistantProposal, NoteAssistantReply, NoteProposal, ProposalAction, StoredChatMessage } from '../src/types/chat.ts'
 import type { Note } from '../src/types/note.ts'
 import { RequestError } from './api.ts'
 import { noteText, textDocument } from '../src/lib/note-text.ts'
@@ -50,6 +50,15 @@ export class ChatStore {
       createdAt INTEGER NOT NULL,
       undone INTEGER NOT NULL DEFAULT 0
     )`)
+    this.db.exec(`CREATE TABLE IF NOT EXISTS note_assistant_proposals (
+      id TEXT PRIMARY KEY, noteId TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+      proposal TEXT NOT NULL, createdAt INTEGER NOT NULL
+    )`)
+    this.db.exec('CREATE INDEX IF NOT EXISTS note_assistant_proposals_note ON note_assistant_proposals(noteId, createdAt)')
+    this.db.exec(`CREATE TABLE IF NOT EXISTS note_assistant_undo_requests (
+      noteId TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE, id TEXT NOT NULL,
+      result TEXT NOT NULL, PRIMARY KEY (noteId, id)
+    )`)
     this.db.prepare('INSERT INTO conversations (id, title, createdAt) VALUES (?, ?, ?) ON CONFLICT(id) DO NOTHING')
       .run('main', 'Chat', Date.now())
   }
@@ -69,6 +78,60 @@ export class ChatStore {
   }
 
   loadNote(id: string): Note | null { return this.currentNote(id) }
+
+  saveNoteProposal(noteId: string, proposal: NoteProposal): NoteAssistantProposal {
+    if (!this.currentNote(noteId)) throw new RequestError(404, 'This note no longer exists.')
+    if (proposal.action !== 'update' || proposal.originalNote?.id !== noteId) throw new RequestError(400, 'This proposal must update the selected note.')
+    const id = randomUUID()
+    this.db.prepare('INSERT INTO note_assistant_proposals (id, noteId, proposal, createdAt) VALUES (?, ?, ?, ?)').run(id, noteId, JSON.stringify(proposal), Date.now())
+    return { id, proposal }
+  }
+
+  loadNoteProposals(noteId: string): NoteAssistantProposal[] {
+    return this.db.prepare('SELECT id, proposal FROM note_assistant_proposals WHERE noteId = ? ORDER BY createdAt DESC, id DESC').all(noteId)
+      .map((row) => ({ id: row.id as string, proposal: JSON.parse(row.proposal as string) as NoteProposal }))
+  }
+
+  noteAssistantState(noteId: string) {
+    const proposals = this.loadNoteProposals(noteId).slice(0, 30).map(({ id, proposal }) => ({ id, title: proposal.title, status: proposal.status }))
+    const latest = this.db.prepare(`SELECT p.id, p.proposal, r.afterNote FROM note_revisions r
+      JOIN note_assistant_proposals p ON p.id = r.proposalMessageId
+      WHERE r.noteId = ? AND r.undone = 0 ORDER BY r.createdAt DESC, r.rowid DESC LIMIT 1`).get(noteId)
+    const lastAppliedUpdate = latest ? { id: latest.id as string, title: (JSON.parse(latest.proposal as string) as NoteProposal).title,
+      canUndo: this.matchesNote(this.currentNote(noteId), JSON.parse(latest.afterNote as string) as Note) } : null
+    return { proposals, lastAppliedUpdate }
+  }
+
+  undoLastNoteAssistantUpdate(noteId: string, requestId: string): NoteAssistantReply {
+    this.db.exec('BEGIN IMMEDIATE')
+    try {
+      const cached = this.db.prepare('SELECT result FROM note_assistant_undo_requests WHERE noteId = ? AND id = ?').get(noteId, requestId)
+      let result: NoteAssistantReply
+      if (cached) {
+        result = JSON.parse(cached.result as string) as NoteAssistantReply
+        if (result.note) result.note = this.currentNote(noteId)
+      } else {
+        const state = this.noteAssistantState(noteId)
+        if (!state.lastAppliedUpdate) result = { content: 'There is no applied note-assistant update to undo. Pending and discarded proposals have not changed your note.' }
+        else {
+          try {
+            result = { content: 'Undid the last saved assistant update and restored the previous note.', ...this.resolveNoteProposal(noteId, state.lastAppliedUpdate.id, 'undo') }
+          } catch (error) {
+            if (!(error instanceof RequestError) || error.status !== 409) throw error
+            result = { content: `I could not undo that update. ${error.message} No changes were made.` }
+          }
+        }
+        this.db.prepare('INSERT INTO note_assistant_undo_requests (noteId, id, result) VALUES (?, ?, ?)').run(noteId, requestId, JSON.stringify(result))
+      }
+      this.db.exec('COMMIT')
+      return result
+    } catch (error) { this.db.exec('ROLLBACK'); throw error }
+  }
+
+  resolveNoteProposal(noteId: string, id: string, action: ProposalAction, title?: string, content?: string, document?: Note['content']) {
+    const result = this.resolveStoredProposal('', id, action, title, content, document, noteId)
+    return { edit: { id, proposal: result.message.proposal! }, note: result.note }
+  }
 
   private matchesNote(current: Note | null, expected: Note) {
     return current !== null && current.title === expected.title && current.folderId === expected.folderId
@@ -152,18 +215,28 @@ export class ChatStore {
   }
 
   resolveProposal(conversationId: string, messageId: string, action: ProposalAction, title?: string, content?: string, document?: Note['content']): { message: StoredChatMessage; note: Note | null } {
-    this.db.exec('BEGIN IMMEDIATE')
+    return this.resolveStoredProposal(conversationId, messageId, action, title, content, document)
+  }
+
+  private resolveStoredProposal(conversationId: string, messageId: string, action: ProposalAction, title?: string, content?: string, document?: Note['content'], panelNoteId?: string): { message: StoredChatMessage; note: Note | null } {
+    this.db.exec('SAVEPOINT resolve_note_proposal')
     try {
-      const row = this.db.prepare("SELECT * FROM chat_messages WHERE id = ? AND conversationId = ? AND role = 'assistant'").get(messageId, conversationId)
+      const row = panelNoteId
+        ? this.db.prepare("SELECT id, proposal, createdAt, 'assistant' AS role, 'Review note update' AS content FROM note_assistant_proposals WHERE id = ? AND noteId = ?").get(messageId, panelNoteId)
+        : this.db.prepare("SELECT * FROM chat_messages WHERE id = ? AND conversationId = ? AND role = 'assistant'").get(messageId, conversationId)
       if (!row || !row.proposal) throw new RequestError(404, 'Note proposal not found.')
       const message = this.message(row)
+      const persist = () => {
+        if (panelNoteId) this.db.prepare('UPDATE note_assistant_proposals SET proposal = ? WHERE id = ? AND noteId = ?').run(JSON.stringify(message.proposal), messageId, panelNoteId)
+        else this.db.prepare('UPDATE chat_messages SET proposal = ? WHERE id = ?').run(JSON.stringify(message.proposal), messageId)
+      }
       const proposal = message.proposal!
       let note: Note | null = null
       if (action === 'reopen') {
         if (proposal.status !== 'discarded' && proposal.status !== 'pending') throw new RequestError(409, 'Only discarded proposals can be reopened.')
         if (proposal.status === 'discarded') {
           message.proposal = { ...proposal, status: 'pending' }
-          this.db.prepare('UPDATE chat_messages SET proposal = ? WHERE id = ?').run(JSON.stringify(message.proposal), messageId)
+          persist()
         }
       } else if (action === 'undo') {
         if (proposal.action !== 'update' || !['saved', 'undone'].includes(proposal.status)) throw new RequestError(409, 'Only a saved update can be undone.')
@@ -178,7 +251,7 @@ export class ChatStore {
           this.db.prepare('UPDATE note_revisions SET undone = 1 WHERE proposalMessageId = ?').run(messageId)
           note = before
           message.proposal = { ...proposal, status: 'undone' }
-          this.db.prepare('UPDATE chat_messages SET proposal = ? WHERE id = ?').run(JSON.stringify(message.proposal), messageId)
+          persist()
         }
       } else if (proposal.status === 'undone') {
         throw new RequestError(409, 'This update was undone. Submit a new request to propose another change.')
@@ -202,11 +275,11 @@ export class ChatStore {
           }
           message.proposal = { ...proposal, title: title!, content: noteText(note.content), document: note.content, status: 'saved', noteId: note.id }
         } else message.proposal = { ...proposal, ...(document ? { title: title ?? proposal.title, content: noteText(document), document } : {}), status: 'discarded' }
-        this.db.prepare('UPDATE chat_messages SET proposal = ? WHERE id = ?').run(JSON.stringify(message.proposal), messageId)
+        persist()
       }
-      this.db.exec('COMMIT')
+      this.db.exec('RELEASE resolve_note_proposal')
       return { message, note }
-    } catch (error) { this.db.exec('ROLLBACK'); throw error }
+    } catch (error) { this.db.exec('ROLLBACK TO resolve_note_proposal; RELEASE resolve_note_proposal'); throw error }
   }
 
   contextThrough(userId: string, conversationId = 'main') {

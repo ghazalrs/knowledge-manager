@@ -5,13 +5,14 @@ A local-first, AI-powered web application that transforms unstructured informati
 ## Features
 
 - **Note Management:** Create, edit, and organize notes into folders.
-- **AI Organization:** Clean, summarize, categorize, and integrate information into new or existing notes.
-- **AI Chat:** Ask questions and interact with stored knowledge.
-- **RAG:** Retrieve relevant information using keyword and semantic search.
-- **Knowledge Graph:** Visualize relationships between notes and concepts.
-- **Flashcards:** Generate study materials from saved notes.
+- **AI Organization:** Review and approve proposals to create or update notes, using keyword retrieval to find related notes.
+- **AI Chat:** Ask questions with locally saved conversation history.
+- **Note Assistant:** Ask about the current note, review suggested edits, and undo approved updates.
+- **Semantic Search Backend:** Cache embeddings and rank related notes; chat integration is planned.
 - **Local Storage:** Store personal knowledge locally without requiring an account.
-- **Bring Your Own API Key:** Connect supported AI providers using personal API keys.
+- **Bring Your Own API Key:** Configure an OpenAI API key on the local server.
+
+Cross-note answers with source links, nested folders, knowledge graphs, and flashcards are planned.
 
 
 ## Tech Stack
@@ -19,13 +20,12 @@ A local-first, AI-powered web application that transforms unstructured informati
 - **Frontend:** React, TypeScript, Vite
 - **UI:** Tailwind CSS, shadcn/ui
 - **Editor:** Tiptap
-- **Database:** IndexedDB, Dexie.js
-- **Search:** Hybrid RAG (keyword and vector search)
-- **Knowledge Graph:** React Flow
+- **Backend and Database:** Local Node.js server and SQLite
+- **Search:** Local text search, keyword retrieval for Organize, and a separate semantic search backend
 
 ## Development setup
 
-Requires Node.js 22.12+ (or a newer supported release) and npm.
+Requires Node.js 22.13+ (or a newer supported release) and npm.
 
 ```bash
 npm install
@@ -45,8 +45,18 @@ npm run preview  # Serve the production build locally
 1. Create notes and organize them into folders.
 2. Add information manually or through the AI chat.
 3. Use AI to clean, summarize, and organize information.
-4. Search and ask questions about stored knowledge.
-5. Explore connections through the knowledge graph.
+4. Search notes by text, or open a note's assistant to ask about its content.
+
+## How it works
+
+Start with the architecture guide, then read the feature you want to understand:
+
+- [Architecture](docs/architecture.md): how the browser, server, database, and AI fit together.
+- [Notes and storage](docs/notes-and-storage.md): rich text, autosave, folders, and persistence.
+- [AI chat](docs/ai-chat.md): modes, history, retries, configuration, and retrieval.
+- [Proposals and undo](docs/proposals-and-undo.md): approval, original snapshots, and safe restoration.
+- [Note assistant](docs/note-assistant.md): questions and edits scoped to the current note.
+- [Semantic search](docs/semantic-search.md): embeddings, caching, and similarity ranking.
 
 
 ## License

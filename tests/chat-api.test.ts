@@ -40,7 +40,7 @@ test('note assistant reads only the selected saved note, refreshes context, and 
   const fetcher: typeof fetch = async (_url, init) => {
     calls++
     const request = JSON.parse(init?.body as string)
-    assert.match(request.instructions, /read-only note assistant/)
+    assert.match(request.instructions, /note assistant/)
     assert.match(request.instructions, /cannot create, update, move, or delete/)
     assert.equal(request.store, false)
     assert.ok(!JSON.stringify(request.input).includes('Unrelated private material.'))
@@ -48,7 +48,10 @@ test('note assistant reads only the selected saved note, refreshes context, and 
     assert.equal(context.title, calls === 1 ? 'Current topic' : 'Renamed topic')
     assert.equal(context.content, calls === 1 ? 'Original saved material.' : 'Newly saved material.')
     if (calls === 2) assert.equal(request.input.at(-1).content, 'Explain that further.')
-    return reply('A read-only explanation.')
+    const stateMessage = request.input.find((message: { content: string }) => message.content.startsWith('Authoritative saved proposal status'))
+    assert.ok(stateMessage)
+    assert.deepEqual(JSON.parse(stateMessage.content.slice(stateMessage.content.indexOf('\n') + 1)).proposals, [])
+    return reply(JSON.stringify({ kind: 'answer', content: 'A read-only explanation.', title: null, noteContent: null }))
   }
   try {
     await withApi(store, fetcher, async (url) => {
@@ -565,6 +568,132 @@ test('Organize retrieves related notes and proposes a scoped update; Ask does no
       assert.equal((await post(url, { id: 'invalid-target', content: 'More SQLite transactions', mode: 'organize', conversationId: 'related-chat' })).status, 502)
       await post(`${url}/conversations`, { id: 'ask-only' })
       assert.equal((await post(url, { id: 'ask-user', content: 'Explain SQLite transactions', mode: 'ask', conversationId: 'ask-only' })).status, 200)
+    })
+  } finally { store.close(); notes.close(); await rm(directory, { recursive: true, force: true }) }
+})
+
+
+test('note assistant edit proposals require approval, stay scoped, persist, and support reopen and undo', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'knowledge-manager-panel-edit-'))
+  const path = join(directory, 'workspace.sqlite')
+  const notes = new NotesStore(path)
+  let store = new ChatStore(path)
+  const original = { id: 'panel-note', title: 'Original title', content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Original facts.', marks: [{ type: 'bold' }] }] }] }, folderId: null, createdAt: 1 }
+  notes.createNote(original)
+  notes.createNote({ ...original, id: 'other-panel-note' })
+  let calls = 0
+  let invalid = false
+  const fetcher: typeof fetch = async (_url, init) => {
+    calls++
+    const request = JSON.parse(init?.body as string)
+    assert.equal(request.text.format.name, 'note_assistant')
+    return reply(JSON.stringify(invalid ? { kind: 'update', content: 'Wrong target', title: 'Bad', noteContent: 'Bad', targetNoteId: 'other-panel-note' }
+      : { kind: 'update', content: 'Review this proposed edit.', title: 'Clearer title', noteContent: 'Original facts. A clearer explanation.' }))
+  }
+  let editId = ''
+  try {
+    await withApi(store, fetcher, async (url) => {
+      const result = await post(`${url}/notes/panel-note`, { messages: [{ role: 'user', content: 'Improve this note.' }] })
+      assert.equal(result.status, 200)
+      const response = await result.json() as { edit: { id: string; proposal: { originalNote: typeof original; status: string } } }
+      editId = response.edit.id
+      assert.deepEqual(response.edit.proposal.originalNote, original)
+      assert.equal(response.edit.proposal.status, 'pending')
+      assert.deepEqual(notes.loadNotes().find((note) => note.id === original.id), original)
+      assert.deepEqual(store.listConversations(), [])
+      const route = `${url}/notes/panel-note/proposals/${editId}`
+      assert.equal((await post(`${url}/notes/other-panel-note/proposals/${editId}`, { action: 'discard' })).status, 404)
+      assert.equal((await post(route, { action: 'discard' }, 'https://unrelated.example')).status, 403)
+      assert.equal((await post(route, { action: 'discard' })).status, 200)
+      assert.equal((await post(route, { action: 'reopen' })).status, 200)
+      assert.equal(calls, 1)
+    })
+    store.close()
+    store = new ChatStore(path)
+    await withApi(store, fetcher, async (url) => {
+      const stored = await (await fetch(`${url}/notes/panel-note/proposals`)).json() as { id: string; proposal: { status: string } }[]
+      assert.equal(stored[0].id, editId)
+      assert.equal(stored[0].proposal.status, 'pending')
+      const route = `${url}/notes/panel-note/proposals/${editId}`
+      const document = { type: 'doc', content: [{ type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: 'Edited facts' }] }] }
+      const approval = { action: 'save', title: 'User edited title', content: 'Edited facts', document }
+      notes.updateNote(original.id, { title: 'Newer manual edit' })
+      assert.equal((await post(route, approval)).status, 409)
+      assert.equal(notes.loadNotes().find((note) => note.id === original.id)?.title, 'Newer manual edit')
+      notes.updateNote(original.id, { title: original.title })
+      assert.equal((await post(route, approval)).status, 200)
+      assert.equal((await post(route, approval)).status, 200)
+      assert.deepEqual(notes.loadNotes().find((note) => note.id === original.id)?.content, document)
+      assert.equal(notes.loadNotes().length, 2)
+      assert.deepEqual(notes.loadNotes().find((note) => note.id === 'other-panel-note'), { ...original, id: 'other-panel-note' })
+      assert.equal((await post(route, { action: 'undo' })).status, 200)
+      assert.equal((await post(route, { action: 'undo' })).status, 200)
+      assert.deepEqual(notes.loadNotes().find((note) => note.id === original.id), original)
+      assert.equal(store.loadNoteProposals(original.id)[0].proposal.status, 'undone')
+      invalid = true
+      assert.equal((await post(`${url}/notes/panel-note`, { messages: [{ role: 'user', content: 'Edit another note.' }] })).status, 502)
+      assert.equal(store.loadNoteProposals(original.id).length, 1)
+      notes.deleteNote(original.id)
+      assert.equal((await fetch(`${url}/notes/panel-note/proposals`)).status, 404)
+      assert.equal((await post(route, { action: 'undo' })).status, 404)
+      assert.deepEqual(store.loadNoteProposals(original.id), [])
+    })
+  } finally { store.close(); notes.close(); await rm(directory, { recursive: true, force: true }) }
+})
+
+
+test('conversational undo uses actual approval status and retries cannot undo a second revision', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'knowledge-manager-panel-undo-'))
+  const path = join(directory, 'workspace.sqlite')
+  const notes = new NotesStore(path)
+  const store = new ChatStore(path)
+  const original = { id: 'undo-note', title: 'Original', content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Original text' }] }] }, folderId: null, createdAt: 1 }
+  notes.createNote(original)
+  let modelCalls = 0
+  try {
+    await withApi(store, async (_url, init) => {
+      modelCalls++
+      const input = JSON.parse(init?.body as string).input
+      const record = input.find((message: { content: string }) => message.content.startsWith('Authoritative saved proposal status'))
+      const state = JSON.parse(record.content.slice(record.content.indexOf('\n') + 1))
+      assert.ok(state.proposals.some((proposal: { status: string }) => proposal.status === 'discarded'))
+      assert.ok(state.proposals.some((proposal: { status: string }) => proposal.status === 'saved'))
+      assert.ok(state.lastAppliedUpdate.canUndo)
+      return reply(JSON.stringify({ kind: 'answer', content: 'A saved update exists.', title: null, noteContent: null }))
+    }, async (url) => {
+      const route = `${url}/notes/undo-note`
+      const askUndo = (requestId: string) => post(route, { requestId, messages: [{ role: 'user', content: 'Can you undo the changes?' }] })
+      const pending = store.saveNoteProposal(original.id, { action: 'update', status: 'pending', originalNote: original, title: 'Pending', content: 'Not saved' })
+      assert.equal((await askUndo('none-pending')).status, 200)
+      assert.equal(store.loadNoteProposals(original.id).length, 1)
+      assert.deepEqual(notes.loadNotes(), [original])
+      store.resolveNoteProposal(original.id, pending.id, 'discard')
+      const none = await (await askUndo('none-discarded')).json() as { content: string; edit?: unknown }
+      assert.match(none.content, /no applied/)
+      assert.equal(none.edit, undefined)
+      const first = store.saveNoteProposal(original.id, { action: 'update', status: 'pending', originalNote: original, title: 'First', content: 'First revision' })
+      store.resolveNoteProposal(original.id, first.id, 'save', 'First', 'First revision')
+      const afterFirst = notes.loadNotes()[0]
+      const second = store.saveNoteProposal(original.id, { action: 'update', status: 'pending', originalNote: afterFirst, title: 'Second', content: 'Second revision' })
+      store.resolveNoteProposal(original.id, second.id, 'save', 'Second', 'Second revision')
+      await post(route, { messages: [{ role: 'user', content: 'Were my changes applied?' }] })
+      assert.equal(modelCalls, 1)
+      const undone = await (await askUndo('undo-second')).json() as { edit: { id: string; proposal: { status: string } } }
+      assert.equal(undone.edit.id, second.id)
+      assert.equal(undone.edit.proposal.status, 'undone')
+      assert.deepEqual(notes.loadNotes(), [afterFirst])
+      await askUndo('undo-second')
+      assert.deepEqual(notes.loadNotes(), [afterFirst], 'a network retry must not undo the first revision too')
+      notes.updateNote(original.id, { title: 'Later manual change' })
+      const blocked = await (await askUndo('blocked')).json() as { content: string; edit?: unknown }
+      assert.match(blocked.content, /overwrite later changes/)
+      assert.equal(blocked.edit, undefined)
+      assert.equal(notes.loadNotes()[0].title, 'Later manual change')
+      notes.updateNote(original.id, { title: afterFirst.title })
+      await askUndo('undo-first')
+      assert.deepEqual(notes.loadNotes(), [original])
+      assert.equal(modelCalls, 1, 'undo must not call the model or generate replacement proposals')
+      assert.equal(store.loadNoteProposals(original.id).length, 3)
     })
   } finally { store.close(); notes.close(); await rm(directory, { recursive: true, force: true }) }
 })
