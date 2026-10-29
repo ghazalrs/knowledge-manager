@@ -3,7 +3,7 @@ import { PanelLeft, X } from 'lucide-react'
 import { Dialog } from 'radix-ui'
 import { Sidebar } from '@/components/layout/sidebar'
 import { DesktopSidebar } from '@/components/layout/desktop-sidebar'
-import { NoteView } from '@/components/notes/note-view'
+import { NoteWorkspace } from '@/components/notes/note-workspace'
 import { WelcomeView } from '@/components/home/welcome-view'
 import { ChatView } from '@/components/chat/chat-view'
 import { Button } from '@/components/ui/button'
@@ -125,7 +125,7 @@ function App() {
   }
 
   return (
-    <div className={`flex bg-background text-foreground ${activeView === 'chat' ? 'fixed inset-0 h-dvh overflow-hidden' : 'min-h-svh'}`}>
+    <div className={`flex bg-background text-foreground ${activeView === 'chat' || (activeView === 'note' && selectedNote) ? 'fixed inset-0 h-dvh overflow-hidden' : 'min-h-svh'}`}>
       {sidebarOpen && (
         <DesktopSidebar>
           <div className="flex h-16 shrink-0 items-center justify-between gap-2 px-4">
@@ -182,7 +182,7 @@ function App() {
             <Button variant="outline" onClick={retrySave}>Retry save</Button>
           </div>
         )}
-        <main className={activeView === 'chat' ? 'flex min-h-0 flex-1 flex-col overflow-hidden' : selectedNote ? 'flex-1 px-6 py-8 sm:px-8 sm:py-12' : 'flex-1 px-5 pb-12 pt-4 sm:px-8 sm:pt-6 lg:px-12'}>
+        <main className={activeView === 'chat' || selectedNote ? 'flex min-h-0 flex-1 flex-col overflow-hidden' : 'flex-1 px-5 pb-12 pt-4 sm:px-8 sm:pt-6 lg:px-12'}>
           {activeView === 'chat' ? (
             <ChatView key={activeConversationId} messages={chatMessages} draft={chatDraft} attachments={chatAttachments}
               mode={chatMode} onModeChange={setChatMode} proposalSaveDisabled={loading || loadError || saveStatus !== 'saved'}
@@ -198,9 +198,10 @@ function App() {
           ) : loading ? <p role="status">Loading workspace…</p> : loadError ? (
             <p className="text-sm text-muted-foreground">Your folders and notes will appear here once the workspace loads.</p>
           ) : selectedNote ? (
-            <NoteView
+            <NoteWorkspace
               key={selectedNote.id}
               note={selectedNote}
+              ready={!loading && !loadError && saveStatus === 'saved'}
               folderName={folders.find((folder) => folder.id === selectedNote.folderId)?.name}
               onContentChange={updateNoteContent}
               onRename={renameNote}

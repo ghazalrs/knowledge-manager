@@ -1,4 +1,4 @@
-import type { ChatMode, Conversation, StoredChatMessage } from '@/types/chat'
+import type { ChatMode, ChatTextMessage, Conversation, StoredChatMessage } from '@/types/chat'
 import type { Note } from '@/types/note'
 
 async function chatRequest(path: string, message?: unknown, method = message ? 'POST' : 'GET') {
@@ -17,6 +17,12 @@ async function chatRequest(path: string, message?: unknown, method = message ? '
   const data = await response.json().catch(() => null)
   if (!response.ok) throw new Error(typeof data?.error === 'string' ? data.error : 'Could not access chat history. Please retry.')
   return data
+}
+
+export async function askAboutNote(noteId: string, messages: ChatTextMessage[]): Promise<string> {
+  const data = await chatRequest(`/notes/${encodeURIComponent(noteId)}`, { messages })
+  if (typeof data?.content !== 'string' || !data.content.trim()) throw new Error('The assistant returned an unreadable answer. Please retry.')
+  return data.content
 }
 
 export async function renameConversation(id: string, title: string): Promise<Conversation> {

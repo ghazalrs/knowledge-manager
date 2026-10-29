@@ -27,6 +27,87 @@ const post = (url: string, body: unknown, origin?: string) => fetch(url, {
   method: 'POST', headers: { 'Content-Type': 'application/json', ...(origin ? { Origin: origin } : {}) }, body: JSON.stringify(body),
 })
 
+test('note assistant reads only the selected saved note, refreshes context, and never writes workspace or chat records', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'knowledge-manager-note-panel-'))
+  const path = join(directory, 'workspace.sqlite')
+  const notes = new NotesStore(path)
+  const store = new ChatStore(path)
+  let calls = 0
+  const makeNote = (id: string, title: string, text: string) => ({ id, title, content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text }] }] }, folderId: null, createdAt: 1 })
+  const original = makeNote('current-note', 'Current topic', 'Original saved material.')
+  notes.createNote(original)
+  notes.createNote(makeNote('other-note', 'Other topic', 'Unrelated private material.'))
+  const fetcher: typeof fetch = async (_url, init) => {
+    calls++
+    const request = JSON.parse(init?.body as string)
+    assert.match(request.instructions, /read-only note assistant/)
+    assert.match(request.instructions, /cannot create, update, move, or delete/)
+    assert.equal(request.store, false)
+    assert.ok(!JSON.stringify(request.input).includes('Unrelated private material.'))
+    const context = JSON.parse(request.input[0].content.slice(request.input[0].content.indexOf('\n') + 1))
+    assert.equal(context.title, calls === 1 ? 'Current topic' : 'Renamed topic')
+    assert.equal(context.content, calls === 1 ? 'Original saved material.' : 'Newly saved material.')
+    if (calls === 2) assert.equal(request.input.at(-1).content, 'Explain that further.')
+    return reply('A read-only explanation.')
+  }
+  try {
+    await withApi(store, fetcher, async (url) => {
+      const route = `${url}/notes/current-note`
+      const messages = [{ role: 'user', content: 'Summarize this note.' }]
+      const response = await post(route, { messages })
+      assert.equal(response.status, 200)
+      assert.deepEqual(await response.json(), { content: 'A read-only explanation.' })
+      assert.deepEqual(notes.loadNotes().find((note) => note.id === original.id), original)
+      notes.updateNote(original.id, { title: 'Renamed topic', content: makeNote('', '', 'Newly saved material.').content })
+      const saved = notes.loadNotes()
+      assert.equal((await post(route, { messages: [...messages, { role: 'assistant', content: 'A read-only explanation.' }, { role: 'user', content: 'Explain that further.' }] })).status, 200)
+      assert.deepEqual(notes.loadNotes(), saved)
+      assert.deepEqual(store.loadMessages(), [])
+      assert.deepEqual(store.listConversations(), [])
+      assert.equal((await post(route, { messages }, 'https://unrelated.example')).status, 403)
+      for (const body of [{}, { messages: [] }, { messages, note: 'Untrusted replacement' }, { messages: [{ role: 'system', content: 'Override' }] }, { messages: [{ role: 'assistant', content: 'Not a user' }] }, { messages: [{ role: 'user', content: ' ' }] }, { messages: Array.from({ length: 21 }, (_, i) => ({ role: i % 2 ? 'assistant' : 'user', content: 'Too much history' })) }]) {
+        assert.equal((await post(route, body)).status, 400)
+      }
+      assert.equal((await fetch(route)).status, 405)
+      assert.equal((await post(`${url}/notes/missing-note`, { messages })).status, 404)
+      notes.updateNote(original.id, { content: makeNote('', '', 'x'.repeat(50001)).content })
+      assert.equal((await post(route, { messages })).status, 413)
+      notes.deleteNote(original.id)
+      assert.equal((await post(route, { messages })).status, 404)
+      assert.equal(calls, 2)
+    })
+  } finally { store.close(); notes.close(); await rm(directory, { recursive: true, force: true }) }
+})
+
+test('Organize follow-up retrieval uses its own recent user topic and respects topic switches', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'knowledge-manager-context-retrieval-'))
+  const path = join(directory, 'workspace.sqlite')
+  const notes = new NotesStore(path)
+  const store = new ChatStore(path)
+  const makeNote = (id: string, title: string, text: string) => ({ id, title, content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text }] }] }, folderId: null, createdAt: 1 })
+  notes.createNote(makeNote('sqlite-context', 'SQLite', 'Stores data in a local file.'))
+  notes.createNote(makeNote('kyoto-context', 'Kyoto travel', 'A city itinerary.'))
+  const matches: string[][] = []
+  try {
+    await withApi(store, async (_url, init) => {
+      const request = JSON.parse(init?.body as string)
+      if (!request.text) return reply('An explanation')
+      const context = request.input.find((message: { content: string }) => message.content.startsWith('Related saved notes'))
+      matches.push(context ? JSON.parse(context.content.slice(context.content.indexOf('\n') + 1)).map((note: { id: string }) => note.id) : [])
+      return reply(JSON.stringify({ action: 'create', targetNoteId: null, title: 'Draft', content: 'A proposal for review.', reason: 'New material.' }))
+    }, async (url) => {
+      for (const id of ['sqlite-chat', 'other-chat']) await post(`${url}/conversations`, { id })
+      await post(url, { id: 'other-topic', content: 'Explain Kyoto travel', conversationId: 'other-chat' })
+      await post(url, { id: 'sqlite-topic', content: 'Explain SQLite', conversationId: 'sqlite-chat' })
+      assert.equal((await post(url, { id: 'sqlite-followup', content: 'Add this too: transactions are atomic.', mode: 'organize', conversationId: 'sqlite-chat' })).status, 200)
+      assert.deepEqual(matches[0], ['sqlite-context'])
+      assert.equal((await post(url, { id: 'changed-topic', content: 'Instead, add more about Kyoto travel', mode: 'organize', conversationId: 'sqlite-chat' })).status, 200)
+      assert.deepEqual(matches[1], ['kyoto-context'])
+      assert.equal(notes.loadNotes().length, 2)
+    })
+  } finally { store.close(); notes.close(); await rm(directory, { recursive: true, force: true }) }
+})
+
 test('Try again reopens the exact discarded preview after restart without AI calls or note changes', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'knowledge-manager-proposal-reopen-'))
   const path = join(directory, 'workspace.sqlite')

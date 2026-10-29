@@ -58,15 +58,17 @@ export class ChatStore {
     return { id: row.id as string, title: row.title as string, content: JSON.parse(row.content as string), folderId: row.folderId as string | null, createdAt: row.createdAt as number }
   }
 
-  relatedNotes(query: string) {
+  relatedNotes(query: string, recentUserMessages: string[] = []) {
     if (!this.db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'notes'").get()) return []
-    return findRelatedNotes(this.db.prepare('SELECT * FROM notes').all().map((row) => this.note(row)), query)
+    return findRelatedNotes(this.db.prepare('SELECT * FROM notes').all().map((row) => this.note(row)), query, recentUserMessages)
   }
 
   private currentNote(id: string): Note | null {
     const row = this.db.prepare('SELECT * FROM notes WHERE id = ?').get(id)
     return row ? this.note(row) : null
   }
+
+  loadNote(id: string): Note | null { return this.currentNote(id) }
 
   private matchesNote(current: Note | null, expected: Note) {
     return current !== null && current.title === expected.title && current.folderId === expected.folderId
