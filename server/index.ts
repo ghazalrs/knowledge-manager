@@ -11,6 +11,9 @@ import { createEmbedder } from './embeddings.ts'
 import { SemanticSearch } from './semantic-search.ts'
 import { createSemanticApi } from './semantic-api.ts'
 import { createKnowledgeRetriever } from './knowledge-retrieval.ts'
+import { createGraphExtractor } from './graph-extraction.ts'
+import { GraphStore } from './graph-store.ts'
+import { createGraphApi } from './graph-api.ts'
 import { FlashcardStore } from './flashcard-store.ts'
 import { createFlashcardGenerator } from './flashcard-generation.ts'
 import { createFlashcardApi } from './flashcard-api.ts'
@@ -26,6 +29,8 @@ const config = await loadChatConfig(resolve(root, '.env.local'))
 const semanticSearch = new SemanticSearch(databasePath, () => store.loadNotes(), createEmbedder(config.apiKey))
 const chatApi = createChatApi({ ...config, retrieve: createKnowledgeRetriever(() => store.loadNotes(), semanticSearch) }, chatStore)
 const semanticApi = createSemanticApi(semanticSearch)
+const graphStore = new GraphStore(databasePath, () => store.loadNotes(), createGraphExtractor(config), config.model)
+const graphApi = createGraphApi(graphStore)
 const flashcardStore = new FlashcardStore(databasePath, () => store.loadNotes())
 const flashcardApi = createFlashcardApi(flashcardStore, createFlashcardGenerator(config))
 const api = createNotesApi(store)
@@ -45,6 +50,7 @@ const server = createServer(async (request, response) => {
   if (!isLocalRequest(request)) { response.writeHead(403).end('Local app requests only'); return }
   const path = request.url?.split('?')[0]
   if (path === '/api/flashcards' || path?.startsWith('/api/flashcards/')) { await flashcardApi(request, response); return }
+  if (path === '/api/graph' || path?.startsWith('/api/graph/')) { await graphApi(request, response); return }
   if (path === '/api/search/semantic') { await semanticApi(request, response); return }
   if (path === '/api/chat' || path?.startsWith('/api/chat/')) { await chatApi(request, response); return }
   if (request.url?.split('?')[0].startsWith('/api/')) { await api(request, response); return }
@@ -72,6 +78,7 @@ async function shutdown(code = 0) {
   store.close()
   chatStore.close()
   semanticSearch.close()
+  graphStore.close()
   flashcardStore.close()
   process.exit(code)
 }

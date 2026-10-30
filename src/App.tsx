@@ -13,6 +13,7 @@ import { useWorkspace } from '@/hooks/use-workspace'
 import { useChat } from '@/hooks/use-chat'
 import type { SidebarSectionId } from '@/components/layout/sidebar-section'
 
+const KnowledgeGraphView = lazy(() => import('@/components/graph/knowledge-graph-view'))
 const FlashcardsView = lazy(() => import('@/components/flashcards/flashcards-view'))
 
 function App() {
@@ -116,6 +117,7 @@ function App() {
     onDeleteConversation: deleteChat,
     chatMutationError,
     onHome: goHome,
+    onGraph: () => { setActiveView('graph'); setSelectedNoteId(null); setMobileOpen(false) },
     onFlashcards: () => { setActiveView('flashcards'); setSelectedNoteId(null); setMobileOpen(false) },
     onCreateNote: createNote,
     onSelectNote: selectNote,
@@ -128,7 +130,7 @@ function App() {
   }
 
   return (
-    <div className={`flex bg-background text-foreground ${activeView === 'chat' || (activeView === 'note' && selectedNote) ? 'fixed inset-0 h-dvh overflow-hidden' : 'min-h-svh'}`}>
+    <div className={`flex bg-background text-foreground ${activeView === 'graph' || activeView === 'chat' || (activeView === 'note' && selectedNote) ? 'fixed inset-0 h-dvh overflow-hidden' : 'min-h-svh'}`}>
       {sidebarOpen && (
         <DesktopSidebar>
           <div className="flex h-16 shrink-0 items-center justify-between gap-2 px-4">
@@ -185,9 +187,13 @@ function App() {
             <Button variant="outline" onClick={retrySave}>Retry save</Button>
           </div>
         )}
-        <main className={activeView === 'chat' || selectedNote ? 'flex min-h-0 flex-1 flex-col overflow-hidden' : 'flex-1 px-5 pb-12 pt-4 sm:px-8 sm:pt-6 lg:px-12'}>
+        <main className={activeView === 'graph' || activeView === 'chat' || selectedNote ? 'flex min-h-0 flex-1 flex-col overflow-hidden' : 'flex-1 px-5 pb-12 pt-4 sm:px-8 sm:pt-6 lg:px-12'}>
           {activeView === 'flashcards' ? (
             <Suspense fallback={<p role="status">Loading flashcards…</p>}><FlashcardsView notes={notes} ready={!loading && !loadError && saveStatus === 'saved'} onOpenNote={selectNote} /></Suspense>
+          ) : activeView === 'graph' ? (
+            <Suspense fallback={<p role="status" className="px-6 py-4 text-sm text-muted-foreground">Loading knowledge graph…</p>}>
+              <KnowledgeGraphView notes={notes} ready={!loading && !loadError && saveStatus === 'saved'} onOpenNote={selectNote} />
+            </Suspense>
           ) : activeView === 'chat' ? (
             <ChatView key={activeConversationId} messages={chatMessages} draft={chatDraft} attachments={chatAttachments}
               noteIds={new Set(notes.map((note) => note.id))} onOpenNote={selectNote}

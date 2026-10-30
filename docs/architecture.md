@@ -46,6 +46,7 @@ Saving a note does not require an AI call. This separation keeps ordinary editin
 | [`server/api.ts`](../server/api.ts) | Validate note/folder requests |
 | [`server/notes-store.ts`](../server/notes-store.ts) | Store notes and folders |
 | [`server/chat-store.ts`](../server/chat-store.ts) | Store chats, proposals, and revisions |
+| [`server/graph-store.ts`](../server/graph-store.ts) | Cache extracted concepts and assemble the knowledge graph |
 | [`tests/`](../tests/) | Check behavior using Node's test runner |
 
-Continue with [notes and storage](notes-and-storage.md), [AI chat](ai-chat.md), or [semantic search](semantic-search.md).
+Continue with [notes and storage](notes-and-storage.md), [AI chat](ai-chat.md), [semantic search](semantic-search.md), or [the knowledge graph](knowledge-graph.md).

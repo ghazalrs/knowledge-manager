@@ -9,10 +9,11 @@ A local-first, AI-powered web application that transforms unstructured informati
 - **AI Chat:** Ask across saved notes, inspect linked sources, and keep conversation history locally.
 - **Note Assistant:** Ask about the current note, review suggested edits, and undo approved updates.
 - **Semantic Search:** Cache embeddings locally and retrieve related ideas inside chat.
+- **Knowledge Graph:** Discover related notes through shared ideas, inspect source evidence, and keep or dismiss connections.
 - **Local Storage:** Store personal knowledge locally without requiring an account.
 - **Bring Your Own API Key:** Configure an OpenAI API key on the local server.
 
-Nested folders and knowledge graphs are planned.
+Nested folders and flashcards are planned.
 
 
 ## Tech Stack
@@ -22,6 +23,7 @@ Nested folders and knowledge graphs are planned.
 - **Editor:** Tiptap
 - **Backend and Database:** Local Node.js server and SQLite
 - **Search:** Combined text/semantic search on Home and hybrid retrieval for chat
+- **Graph:** React Flow with locally cached concept extraction
 
 ## Development setup
 
@@ -47,6 +49,7 @@ npm run preview  # Serve the production build locally
 3. Use AI to clean, summarize, and organize information.
 4. Use Home's single search bar to find notes by words or meaning, or open a note's assistant to ask about its content.
 5. Use Ask chat to compare information across notes and open the sources below its answers.
+6. Open Knowledge graph to follow related notes and see why they connect.
 
 ## How it works
 
@@ -59,6 +62,7 @@ Start with the architecture guide, then read the feature you want to understand:
 - [Note assistant](docs/note-assistant.md): questions and edits scoped to the current note.
 - [Semantic search](docs/semantic-search.md): embeddings, caching, and similarity ranking.
 - [Knowledge retrieval and answers](docs/knowledge-retrieval.md): hybrid retrieval, source validation, and evidence limitations.
+- [Knowledge graph](docs/knowledge-graph.md): note connections, shared ideas, saved choices, and cached extraction.
 - [Flashcards](docs/flashcards.md): generate, edit, save, and review cards from notes.
 
 

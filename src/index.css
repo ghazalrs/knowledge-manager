@@ -1,9 +1,21 @@
 @import "tailwindcss";
+@import "@xyflow/react/dist/style.css";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/geist";
 
 @custom-variant dark (&:is(.dark *));
+
+.react-flow {
+  --xy-background-color-default: transparent;
+  --xy-controls-button-background-color-default: var(--background);
+  --xy-controls-button-background-color-hover-default: var(--muted);
+  --xy-controls-button-color-default: var(--foreground);
+  --xy-controls-button-border-color-default: var(--border);
+  --xy-edge-stroke-default: var(--muted-foreground);
+  --xy-handle-background-color-default: var(--muted-foreground);
+  --xy-handle-border-color-default: var(--background);
+}
 
 .note-editor > * + * { margin-top: 0.75rem; }
 .note-editor h2 { font-size: 1.5rem; font-weight: 600; }
