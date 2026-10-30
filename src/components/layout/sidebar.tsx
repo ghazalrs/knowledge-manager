@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { FolderPlus, Home, Plus, SquarePen } from 'lucide-react'
+import { FolderPlus, Home, Plus, SquarePen, Layers } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ChatHistoryRow } from '@/components/chat/chat-history-row'
 import { NoteRow } from '@/components/notes/note-row'
@@ -30,6 +30,7 @@ type SidebarProps = {
   onDeleteConversation: (id: string) => void
   chatMutationError: string
   onHome: () => void
+  onFlashcards: () => void
   onCreateNote: (folderId?: string | null) => void
   onSelectNote: (id: string) => void
   onRenameNote: (id: string, title: string) => void
@@ -40,7 +41,7 @@ type SidebarProps = {
   onDeleteFolder: (id: string) => void
 }
 
-export function Sidebar({ notes, folders, loading, loadError, selectedNoteId, activeView, conversations, activeConversationId, collapsedSections, onToggleSection, chatLoading, chatLoadError, onRetryChatLoad, onNewChat, onSelectConversation, onRenameConversation, onDeleteConversation, chatMutationError, onHome, onCreateNote, onSelectNote, onRenameNote, onDeleteNote, onMoveNote, onCreateFolder, onRenameFolder, onDeleteFolder }: SidebarProps) {
+export function Sidebar({ notes, folders, loading, loadError, selectedNoteId, activeView, conversations, activeConversationId, collapsedSections, onToggleSection, chatLoading, chatLoadError, onRetryChatLoad, onNewChat, onSelectConversation, onRenameConversation, onDeleteConversation, chatMutationError, onHome, onFlashcards, onCreateNote, onSelectNote, onRenameNote, onDeleteNote, onMoveNote, onCreateFolder, onRenameFolder, onDeleteFolder }: SidebarProps) {
   const topLevelNotes = notes.filter((note) => note.folderId === null)
   const [draggedNoteId, setDraggedNoteId] = useState<string | null>(null)
   const draggedNote = notes.find((note) => note.id === draggedNoteId)
@@ -62,6 +63,7 @@ export function Sidebar({ notes, folders, loading, loadError, selectedNoteId, ac
           <Home aria-hidden="true" />
           Home
         </Button>
+        <Button variant={activeView === 'flashcards' ? 'secondary' : 'ghost'} className="h-10 w-full justify-start gap-3 rounded-xl font-normal" aria-current={activeView === 'flashcards' ? 'page' : undefined} onClick={onFlashcards} disabled={loading || loadError}><Layers aria-hidden="true" />Flashcards</Button>
         <Button variant={newChatActive ? 'secondary' : 'ghost'}
           className="h-10 w-full justify-start gap-3 rounded-xl font-normal"
           aria-current={newChatActive ? 'page' : undefined} onClick={onNewChat}>

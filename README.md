@@ -12,7 +12,7 @@ A local-first, AI-powered web application that transforms unstructured informati
 - **Local Storage:** Store personal knowledge locally without requiring an account.
 - **Bring Your Own API Key:** Configure an OpenAI API key on the local server.
 
-Nested folders, knowledge graphs, and flashcards are planned.
+Nested folders and knowledge graphs are planned.
 
 
 ## Tech Stack
@@ -59,6 +59,7 @@ Start with the architecture guide, then read the feature you want to understand:
 - [Note assistant](docs/note-assistant.md): questions and edits scoped to the current note.
 - [Semantic search](docs/semantic-search.md): embeddings, caching, and similarity ranking.
 - [Knowledge retrieval and answers](docs/knowledge-retrieval.md): hybrid retrieval, source validation, and evidence limitations.
+- [Flashcards](docs/flashcards.md): generate, edit, save, and review cards from notes.
 
 
 ## License

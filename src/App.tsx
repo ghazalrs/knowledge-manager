@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { lazy, Suspense, useState } from 'react'
 import { PanelLeft, X } from 'lucide-react'
 import { Dialog } from 'radix-ui'
 import { Sidebar } from '@/components/layout/sidebar'
@@ -12,6 +12,8 @@ import type { WorkspaceView } from '@/types/chat'
 import { useWorkspace } from '@/hooks/use-workspace'
 import { useChat } from '@/hooks/use-chat'
 import type { SidebarSectionId } from '@/components/layout/sidebar-section'
+
+const FlashcardsView = lazy(() => import('@/components/flashcards/flashcards-view'))
 
 function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
@@ -114,6 +116,7 @@ function App() {
     onDeleteConversation: deleteChat,
     chatMutationError,
     onHome: goHome,
+    onFlashcards: () => { setActiveView('flashcards'); setSelectedNoteId(null); setMobileOpen(false) },
     onCreateNote: createNote,
     onSelectNote: selectNote,
     onRenameNote: renameNote,
@@ -183,7 +186,9 @@ function App() {
           </div>
         )}
         <main className={activeView === 'chat' || selectedNote ? 'flex min-h-0 flex-1 flex-col overflow-hidden' : 'flex-1 px-5 pb-12 pt-4 sm:px-8 sm:pt-6 lg:px-12'}>
-          {activeView === 'chat' ? (
+          {activeView === 'flashcards' ? (
+            <Suspense fallback={<p role="status">Loading flashcards…</p>}><FlashcardsView notes={notes} ready={!loading && !loadError && saveStatus === 'saved'} onOpenNote={selectNote} /></Suspense>
+          ) : activeView === 'chat' ? (
             <ChatView key={activeConversationId} messages={chatMessages} draft={chatDraft} attachments={chatAttachments}
               noteIds={new Set(notes.map((note) => note.id))} onOpenNote={selectNote}
               mode={chatMode} onModeChange={setChatMode} proposalSaveDisabled={loading || loadError || saveStatus !== 'saved'}

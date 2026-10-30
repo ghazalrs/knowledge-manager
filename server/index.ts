@@ -11,6 +11,9 @@ import { createEmbedder } from './embeddings.ts'
 import { SemanticSearch } from './semantic-search.ts'
 import { createSemanticApi } from './semantic-api.ts'
 import { createKnowledgeRetriever } from './knowledge-retrieval.ts'
+import { FlashcardStore } from './flashcard-store.ts'
+import { createFlashcardGenerator } from './flashcard-generation.ts'
+import { createFlashcardApi } from './flashcard-api.ts'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
 const production = process.argv.includes('--production')
@@ -23,6 +26,8 @@ const config = await loadChatConfig(resolve(root, '.env.local'))
 const semanticSearch = new SemanticSearch(databasePath, () => store.loadNotes(), createEmbedder(config.apiKey))
 const chatApi = createChatApi({ ...config, retrieve: createKnowledgeRetriever(() => store.loadNotes(), semanticSearch) }, chatStore)
 const semanticApi = createSemanticApi(semanticSearch)
+const flashcardStore = new FlashcardStore(databasePath, () => store.loadNotes())
+const flashcardApi = createFlashcardApi(flashcardStore, createFlashcardGenerator(config))
 const api = createNotesApi(store)
 const vite = production ? null : await (await import('vite')).createServer({
   root,
@@ -39,6 +44,7 @@ const mime: Record<string, string> = {
 const server = createServer(async (request, response) => {
   if (!isLocalRequest(request)) { response.writeHead(403).end('Local app requests only'); return }
   const path = request.url?.split('?')[0]
+  if (path === '/api/flashcards' || path?.startsWith('/api/flashcards/')) { await flashcardApi(request, response); return }
   if (path === '/api/search/semantic') { await semanticApi(request, response); return }
   if (path === '/api/chat' || path?.startsWith('/api/chat/')) { await chatApi(request, response); return }
   if (request.url?.split('?')[0].startsWith('/api/')) { await api(request, response); return }
@@ -66,6 +72,7 @@ async function shutdown(code = 0) {
   store.close()
   chatStore.close()
   semanticSearch.close()
+  flashcardStore.close()
   process.exit(code)
 }
 server.on('error', (error) => {
